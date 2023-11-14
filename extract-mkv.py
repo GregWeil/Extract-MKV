@@ -10,12 +10,15 @@ MAKEMKV_SOURCEFILENAME = 16
 MAKEMKV_ORIGINALTITLEID = 24
 MAKEMKV_OUTPUTFILENAME = 27
 
-config_path = ""
-source_directory = ""
-target_directory = ""
-
-makemkvcon = ""
-mkvmerge = ""
+env_dir = os.path.dirname(os.path.abspath(__file__))
+env_path = os.path.join(env_dir, "env.json")
+with open(env_path) as env_json:
+    env = json.load(env_json)
+    config_path = os.path.join(env_dir, env["config"])
+    source_directory = os.path.join(env_dir, env["source"])
+    target_directory = os.path.join(env_dir, env["destination"])
+    makemkvcon = env["makemkvcon"] if "makemkvcon" in env else "makemkvcon"
+    mkvmerge = env["mkvmerge"] if "mkvmerge" in env else "mkvmerge"
 
 if not os.path.isfile(makemkvcon):
     logging.error("Could not find makemkvcon64")
