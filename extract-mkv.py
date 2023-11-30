@@ -42,7 +42,7 @@ def extract_bdmv_title(name, config, directory, title, title_output):
         args = []
         args += ["--audio-tracks", ",".join([str(track["track"]) for track in config["audio"]])]
         args += ["--subtitle-tracks", ",".join([str(track["track"]) for track in config["subtitle"]])]
-        all_tracks = [{ "track": 0 }, *config["audio"], *config["subtitle"]]
+        all_tracks = [*config.get("video", [{ "track": 0 }]), *config["audio"], *config["subtitle"]]
         args += ["--track-order", ",".join(["0:" + str(track["track"]) for track in all_tracks])]
         for track in all_tracks:
             if "name" in track: args += ["--track-name", str(track["track"]) + ":" + track["name"]]
@@ -50,6 +50,12 @@ def extract_bdmv_title(name, config, directory, title, title_output):
             if "default" in track: args += ["--default-track-flag", str(track["track"]) + ":" + ("1" if track["default"] else "0")]
             if "forced" in track: args += ["--forced-display-flag", str(track["track"]) + ":" + ("1" if track["forced"] else "0")]
             if "commentary" in track: args += ["--commentary-flag", str(track["track"]) + ":" + ("1" if track["commentary"] else "0")]
+            if "cropping" in track:
+                left = str(track["cropping"].get("left", 0))
+                top = str(track["cropping"].get("top", 0))
+                right = str(track["cropping"].get("right", 0))
+                bottom = str(track["cropping"].get("bottom", 0))
+                args += ["--cropping", str(track["track"]) + ":" + left + "," + top + "," + right + "," + bottom]
         logging.debug("Remux args: " + " ".join(args))
         subprocess.run([makemkvcon, "mkv", "file:" + directory, title, working_directory], check=True, stdout=(None if arguments.verbose else subprocess.DEVNULL))
         if not os.path.isfile(working_file):

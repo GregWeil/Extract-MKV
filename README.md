@@ -58,13 +58,14 @@ The `media.json` file stores definitions for how to handle each movie
 - **DISCID**: The name of the folder containing the BDMV/CERTIFICATE/etc folder structure
 - **TITLEID**: The 'source file name' in the MakeMKV interface for the desired title
 - **NAME**: The output file for this title will be `[env.json:destination]/[NAME].mkv`
-- Track options (output order is determined by order in the definition)
+- Track options (track order is determined by definition order)
   - **track**: The index of the track in the MakeMKV interface
   - **name**: The display name of the track
   - **language**: The language code for the track
   - **default**: Set true if the track should have the default flag
   - **forced**: Set true if the track should have the forced flag
   - **commentary**: Set true if the track should have the commentary flag
+  - **cropping**: Set { left, top, right, bottom } to inform players to crop pixels without reencoding (few players actually support this)
 
 ## Extra notes
 
@@ -72,10 +73,12 @@ The `media.json` file stores definitions for how to handle each movie
 - Track indices start at 0 and count up, continuing through all track types without restarting
   - Core audio tracks are included when counting tracks
   - Forced subtitle tracks are only counted if forced subtitles exist
-- Video is assumed to be track 0 and always included, there is currently no way to customize how video tracks are handled
+- If video tracks are not specified, track 0 is used with all default values
 
 ## TODO
 
 - Support for DVD isos using MakeMKV's 'source title id' as the TITLEID
+- Use a more stable identifier than folder name for discs
+- Use a more stable identifier for tracks than index
 - Output subfolder support for movies with multiple cuts or special features
-- Specify chapter names in the definition
+- Specify chapter names in the definition (does anything use this?)
