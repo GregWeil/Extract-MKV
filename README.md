@@ -38,7 +38,7 @@ The `media.json` file stores definitions for how to handle each movie
             "name": "NAME",
             "audio": [
                 {
-                    "track": 1,
+                    "track": 0,
                     "name": "5.1 DTS-HD Master Audio",
                     "language": "eng",
                     "default": true
@@ -46,9 +46,15 @@ The `media.json` file stores definitions for how to handle each movie
             ],
             "subtitle": [
                 {
-                    "track": 7,
+                    "track": 0,
                     "name": "English",
                     "language": "eng"
+                },
+                {
+                    "track": { "index": 0, "forced": true },
+                    "name": "English (forced)",
+                    "language": "eng",
+                    "forced": true
                 }
             ]
         }
@@ -59,26 +65,28 @@ The `media.json` file stores definitions for how to handle each movie
 - **TITLEID**: The 'source file name' in the MakeMKV interface for the desired title
 - **NAME**: The output file for this title will be `[env.json:destination]/[NAME].mkv`
 - Track options (track order is determined by definition order)
-  - **track**: The index of the track in the MakeMKV interface
+  - **track**: The index of the track in the MakeMKV interface (second audio track is 1)
   - **name**: The display name of the track
   - **language**: The language code for the track
   - **default**: Set true if the track should have the default flag
   - **forced**: Set true if the track should have the forced flag
   - **commentary**: Set true if the track should have the commentary flag
-  - **cropping**: Set { left, top, right, bottom } to inform players to crop pixels without reencoding (few players actually support this)
+  - **cropping**: Set `{ left, top, right, bottom }`` to inform players to crop pixels without reencoding (few players actually support this)
 
 ## Extra notes
 
 - Some movies have several titles with the same source file, differentiated using an angle number. In this case the TITLEID would be something like `00245.mpls:1`
-- Track indices start at 0 and count up, continuing through all track types without restarting
-  - Core audio tracks are included when counting tracks
-  - Forced subtitle tracks are only counted if forced subtitles exist
-- If video tracks are not specified, track 0 is used with all default values
+- Track indices are zero indexed and follow MakeMKV UI ordering
+  - Core audio and forced subtitle tracks are not counted for track numbering
+  - To reference the first audio track's core set `track: { index: 0, core: true }`
+  - To reference forced subtitles for a track set `track: { index: 0, forced: true }`
+- If video tracks are not specified, the first video track is used with all default values
+- If audio tracks are not specified, the first audio track is used with all default values
 
 ## TODO
 
 - Support for DVD isos using MakeMKV's 'source title id' as the TITLEID
 - Use a more stable identifier than folder name for discs
-- Use a more stable identifier for tracks than index
 - Output subfolder support for movies with multiple cuts or special features
 - Specify chapter names in the definition (does anything use this?)
+- Reference tracks from other titles/BDMVs (ex pull commentary from an older release)
