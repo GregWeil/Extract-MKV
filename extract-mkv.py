@@ -25,7 +25,8 @@ env_dir = os.path.dirname(os.path.abspath(__file__))
 env_path = os.path.join(env_dir, "env.json")
 with open(env_path) as env_json:
     env = json.load(env_json)
-    config_path = os.path.join(env_dir, env["config"])
+    configs = env["config"] if isinstance(env["config"], list) else [env["config"]]
+    config_paths = [os.path.join(env_dir, config) for config in configs]
     source_directory = os.path.join(env_dir, env["source"])
     target_directory = os.path.join(env_dir, env["destination"])
     temp_directory = os.path.join(env_dir, env["temp"]) if "temp" in env else None
@@ -71,11 +72,11 @@ def extract_bdmv_title(name, config, directory, title, title_output):
         working_file = os.path.join(working_directory, title_output)
         target_file = os.path.join(target_directory, config["name"] + ".mkv")
 
-        result = subprocess.run([makemkvcon, "mkv", "file:" + directory, title, working_directory], check=True, stdout=subprocess.PIPE, universal_newlines=True)
+        result = subprocess.run([makemkvcon, "--robot", "--noscan", "mkv", "file:" + directory, title, working_directory], check=True, stdout=subprocess.PIPE, universal_newlines=True)
         if not os.path.isfile(working_file):
             logging.critical("Expected file " + working_file + " to have been created")
             exit(1)
-        removed_tracks = [int(track) for track in MAKEMKV_TRACK_REMOVED.findall(result.stdout)]
+        removed_tracks = set(int(track) for track in MAKEMKV_TRACK_REMOVED.findall(result.stdout))
         logging.debug("The following tracks were removed: %r", removed_tracks)
         all_tracks = [*config["video"], *config["audio"], *config["subtitle"]]
         for track in all_tracks:
@@ -108,7 +109,7 @@ def extract_bdmv_title(name, config, directory, title, title_output):
 
 def extract_bdmv(name, config, directory):
     logging.info("Processing " + name)
-    result = subprocess.run([makemkvcon, "--robot", "info", directory], check=True, stdout=subprocess.PIPE, universal_newlines=True)
+    result = subprocess.run([makemkvcon, "--robot", "--noscan", "info", directory], check=True, stdout=subprocess.PIPE, universal_newlines=True)
     title_file = {}
     title_angle = {}
     title_output = {}
@@ -155,9 +156,10 @@ def extract_bdmv(name, config, directory):
         normalize_config_source(config[source], stream_video.get(title, []), stream_audio.get(title, []), stream_subtitle.get(title, []), stream_derived.get(title, []))
         extract_bdmv_title(name, config[source], directory, title, output)
 
-with open(config_path) as config_file:
-    config = json.load(config_file)
-    for dir in os.listdir(source_directory):
-        if not dir in config: continue
-        if not dir in selection and not "ALL" in selection: continue
-        extract_bdmv(dir, config[dir], os.path.join(source_directory, dir))
+for config_path in config_paths:
+    with open(config_path) as config_file:
+        config = json.load(config_file)
+        for dir in os.listdir(source_directory):
+            if not dir in config: continue
+            if not dir in selection and not "ALL" in selection: continue
+            extract_bdmv(dir, config[dir], os.path.join(source_directory, dir))

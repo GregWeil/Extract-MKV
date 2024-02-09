@@ -30,6 +30,13 @@ Create an `env.json` file next to the main script containing the following prope
 }
 ```
 
+- **makemkvcon**: Optional path to the makemkvcon executable
+- **mkvmerge**: Optional path to the mkvmerge executable
+- **source**: Required path to the folder containing all of the BDMV/ISOs
+- **destination**: Required path where mkv files should be created
+- **config**: Required path to a config file containing movie definitions
+- **temp**: Optional working directory instead of the standard temp location
+
 The `media.json` file stores definitions for how to handle each movie
 ```json
 {
@@ -75,6 +82,7 @@ The `media.json` file stores definitions for how to handle each movie
 
 ## Extra notes
 
+- Set the env.json config property to an array to split definitions across multiple files
 - Some movies have several titles with the same source file, differentiated using an angle number. In this case the TITLEID would be something like `00245.mpls:1`
 - Track indices are zero indexed and follow MakeMKV UI ordering
   - Core audio and forced subtitle tracks are not counted for track numbering
