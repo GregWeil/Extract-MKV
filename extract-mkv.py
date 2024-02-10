@@ -66,15 +66,26 @@ def normalize_config_source(config, video_streams, audio_streams, subtitle_strea
     normalize_config_streams(config.setdefault("audio", [{ "track": 0 }]), audio_streams, derived_streams)
     normalize_config_streams(config.setdefault("subtitle", []), subtitle_streams, derived_streams)
 
+def get_title_output_path(config):
+    path = os.path.join(*config["path"]) if isinstance(config.get("path"), list) else config.get("path", "")
+    name = "%s (%i)" % (config["name"], config["year"]) if "year" in config else config["name"]
+    subpath = ""
+    filename = "%s - %s" % (name, config["version"]) if "version" in config else name
+    if "season" in config:
+        subpath = "Season %02i" % config["season"]
+        if "episode" in config:
+            filename = "%s S%02iE%02i" % (config["name"], config["season"], config["episode"])
+    return os.path.join(target_directory, path, name, subpath, filename + ".mkv")
+
 def extract_bdmv_title(name, config, directory, title, title_output):
-    logging.info("Extracting " + config["name"])
+    target_file = get_title_output_path(config)
+    logging.info("Extracting %s", os.path.splitext(os.path.basename(target_file))[0])
     with tempfile.TemporaryDirectory(prefix=name, suffix=title, dir=temp_directory) as working_directory:
         working_file = os.path.join(working_directory, title_output)
-        target_file = os.path.join(target_directory, config["name"] + ".mkv")
 
         result = subprocess.run([makemkvcon, "--robot", "--noscan", "mkv", "file:" + directory, title, working_directory], check=True, stdout=subprocess.PIPE, universal_newlines=True)
         if not os.path.isfile(working_file):
-            logging.critical("Expected file " + working_file + " to have been created")
+            logging.critical("Expected file %s to have been created", working_file)
             exit(1)
         removed_tracks = set(int(track) for track in MAKEMKV_TRACK_REMOVED.findall(result.stdout))
         logging.debug("The following tracks were removed: %r", removed_tracks)
@@ -159,7 +170,14 @@ def extract_bdmv(name, config, directory):
 for config_path in config_paths:
     with open(config_path) as config_file:
         config = json.load(config_file)
-        for dir in os.listdir(source_directory):
-            if not dir in config: continue
-            if not dir in selection and not "ALL" in selection: continue
-            extract_bdmv(dir, config[dir], os.path.join(source_directory, dir))
+        defaults = config.pop("", {})
+        for iso in config:
+            for title in config[iso]:
+                config[iso][title] = dict(defaults, **config[iso][title])
+        for path, dirs, files in os.walk(source_directory):
+            name = os.path.basename(path)
+            if not "BDMV" in dirs: continue
+            else: dirs.remove("BDMV")
+            if not name in config: continue
+            if not name in selection and not "ALL" in selection: continue
+            extract_bdmv(name, config[name], path)

@@ -42,7 +42,8 @@ The `media.json` file stores definitions for how to handle each movie
 {
     "DISCID": {
         "TITLEID": {
-            "name": "NAME",
+            "name": "Movie Name",
+            "year": 2021,
             "audio": [
                 {
                     "track": 0,
@@ -70,7 +71,12 @@ The `media.json` file stores definitions for how to handle each movie
 ```
 - **DISCID**: The name of the folder containing the BDMV/CERTIFICATE/etc folder structure
 - **TITLEID**: The 'source file name' in the MakeMKV interface for the desired title
-- **NAME**: The output file for this title will be `[env.json:destination]/[NAME].mkv`
+- **name**: The name of the movie/series
+- **year**: The release year of the movie/series
+- **version**: The specific version of the movie
+- **season**: The season of the episode
+- **episode**: The episode number within the season
+- **path**: Where to put the movie relative to `env.json:destination`
 - Track options (track order is determined by definition order)
   - **track**: The index of the track in the MakeMKV interface (second audio track is 1)
   - **name**: The display name of the track
@@ -83,6 +89,10 @@ The `media.json` file stores definitions for how to handle each movie
 ## Extra notes
 
 - Set the env.json config property to an array to split definitions across multiple files
+- Files are generated at `[destination]/[path]/[name] ([year])/[name] ([year]).mkv`
+  - If version is defined then `[destination]/[path]/[name] ([year])/[name] ([year]) - [version].mkv`
+  - If season and episode then `[destination]/[path]/[name] ([year])/Season [season]/[name] S[season]E[episode].mkv`
+- Values in `DISCID=""` act as defaults for all titles in the file, handy to avoid repeatedly specifying the path or series name
 - Some movies have several titles with the same source file, differentiated using an angle number. In this case the TITLEID would be something like `00245.mpls:1`
 - Track indices are zero indexed and follow MakeMKV UI ordering
   - Core audio and forced subtitle tracks are not counted for track numbering
@@ -95,6 +105,5 @@ The `media.json` file stores definitions for how to handle each movie
 
 - Support for DVD isos using MakeMKV's 'source title id' as the TITLEID
 - Use a more stable identifier than folder name for discs
-- Output subfolder support for movies with multiple cuts or special features
 - Specify chapter names in the definition (does anything use this?)
 - Reference tracks from other titles/BDMVs (ex pull commentary from an older release)
