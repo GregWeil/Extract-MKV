@@ -88,12 +88,13 @@ The `media.json` file stores definitions for how to handle each movie
 
 ## Extra notes
 
+- For DVD ISOs, set `DISCID="file.iso"` and `TITLEID="01"` using the 'Source title ID' shown in MakeMKV
 - Set the env.json config property to an array to split definitions across multiple files
 - Files are generated at `[destination]/[path]/[name] ([year])/[name] ([year]).mkv`
   - If version is defined then `[destination]/[path]/[name] ([year])/[name] ([year]) - [version].mkv`
   - If season and episode then `[destination]/[path]/[name] ([year])/Season [season]/[name] S[season]E[episode].mkv`
 - Values in `DISCID=""` act as defaults for all titles in the file, handy to avoid repeatedly specifying the path or series name
-- Some movies have several titles with the same source file, differentiated using an angle number. In this case the TITLEID would be something like `00245.mpls:1`
+- Some movies have several titles with the same source file, differentiated using an angle number `TITLEID="00245.mpls:1"`
 - Track indices are zero indexed and follow MakeMKV UI ordering
   - Core audio and forced subtitle tracks are not counted for track numbering
   - To reference the first audio track's core set `track: { index: 0, core: true }`
@@ -103,7 +104,6 @@ The `media.json` file stores definitions for how to handle each movie
 
 ## TODO
 
-- Support for DVD isos using MakeMKV's 'source title id' as the TITLEID
 - Use a more stable identifier than folder name for discs
 - Specify chapter names in the definition (does anything use this?)
 - Reference tracks from other titles/BDMVs (ex pull commentary from an older release)

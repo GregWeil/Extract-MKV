@@ -1,5 +1,6 @@
 import os
 import re
+import copy
 import json
 import logging
 import argparse
@@ -87,7 +88,7 @@ def extract_bdmv_title(name, config, directory, title, title_output):
         if not os.path.isfile(working_file):
             logging.critical("Expected file %s to have been created", working_file)
             exit(1)
-        removed_tracks = set(int(track) for track in MAKEMKV_TRACK_REMOVED.findall(result.stdout))
+        removed_tracks = sorted(set(int(track) for track in MAKEMKV_TRACK_REMOVED.findall(result.stdout)))
         logging.debug("The following tracks were removed: %r", removed_tracks)
         all_tracks = [*config["video"], *config["audio"], *config["subtitle"]]
         for track in all_tracks:
@@ -123,6 +124,7 @@ def extract_bdmv(name, config, directory):
     result = subprocess.run([makemkvcon, "--robot", "--noscan", "info", directory], check=True, stdout=subprocess.PIPE, universal_newlines=True)
     title_file = {}
     title_angle = {}
+    title_originalid = {}
     title_output = {}
     stream_video = {}
     stream_audio = {}
@@ -131,10 +133,12 @@ def extract_bdmv(name, config, directory):
     for line in result.stdout.splitlines():
         if line.startswith("TINFO:"):
             [title, field, code, value] = line[6:].split(",", 3)
-            if int(field) == MAKEMKV_ANGLEINFO:
-                title_angle[title] = value.strip('"')
             if int(field) == MAKEMKV_SOURCEFILENAME:
                 title_file[title] = value.strip('"')
+            if int(field) == MAKEMKV_ANGLEINFO:
+                title_angle[title] = value.strip('"')
+            if int(field) == MAKEMKV_ORIGINALTITLEID:
+                title_originalid[title] = value.strip('"')
             if int(field) == MAKEMKV_OUTPUTFILENAME:
                 title_output[title] = value.strip('"')
         if line.startswith("SINFO:"):
@@ -153,6 +157,8 @@ def extract_bdmv(name, config, directory):
     for title in title_file:
         if not title in title_angle: source_title[title_file[title]] = title
         else: source_title[title_file[title] + ":" + title_angle[title]] = title
+    for title in title_originalid:
+        source_title[title_originalid[title]] = title
     logging.debug("Identified titles: " + json.dumps(source_title))
     for source in config:
         title = source_title[source]
@@ -163,7 +169,8 @@ def extract_bdmv(name, config, directory):
         if not output:
             logging.critical("Did not get an output file for " + name + " " + source)
             exit(1)
-        logging.debug("Streams for %s: video=%r audio=%r subtitle=%r derived=%r", source, stream_video[title], stream_audio[title], stream_subtitle[title], stream_derived[title])
+        logging.debug("Streams for %s: video=%r audio=%r subtitle=%r derived=%r", source,
+            stream_video.get(title, []), stream_audio.get(title, []), stream_subtitle.get(title, []), stream_derived.get(title, []))
         normalize_config_source(config[source], stream_video.get(title, []), stream_audio.get(title, []), stream_subtitle.get(title, []), stream_derived.get(title, []))
         extract_bdmv_title(name, config[source], directory, title, output)
 
@@ -171,13 +178,10 @@ for config_path in config_paths:
     with open(config_path) as config_file:
         config = json.load(config_file)
         defaults = config.pop("", {})
-        for iso in config:
-            for title in config[iso]:
-                config[iso][title] = dict(defaults, **config[iso][title])
         for path, dirs, files in os.walk(source_directory):
-            name = os.path.basename(path)
-            if not "BDMV" in dirs: continue
-            else: dirs.remove("BDMV")
-            if not name in config: continue
-            if not name in selection and not "ALL" in selection: continue
-            extract_bdmv(name, config[name], path)
+            for name in [*dirs, *files]:
+                if not name in config: continue
+                if not name in selection and not "ALL" in selection: continue
+                for title in config[name]:
+                    config[name][title] = dict(copy.deepcopy(defaults), **config[name][title])
+                extract_bdmv(name, config[name], os.path.join(path, name))
