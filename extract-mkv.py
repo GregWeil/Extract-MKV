@@ -48,6 +48,18 @@ arguments = argparser.parse_args()
 selection = arguments.selection.split(",")
 logging.basicConfig(level=(logging.DEBUG if arguments.verbose else logging.INFO), format="%(asctime)s %(levelname)s %(message)s")
 
+def exec(args):
+    logging.debug(' '.join(args))
+    output = ""
+    with subprocess.Popen(args, stdout=subprocess.PIPE, text=True, universal_newlines=True) as process:
+        for line in process.stdout:
+            if arguments.verbose: print(line, end="")
+            output += line
+    if process.returncode != 0:
+        if not arguments.verbose: print(output, end="")
+        raise subprocess.CalledProcessError(process.returncode, process.args)
+    return output
+
 def normalize_config_streams(config_streams, actual_streams, derived_streams):
     for config in config_streams:
         config_track = config["track"] if isinstance(config["track"], dict) else { "index": config["track"] }
@@ -84,11 +96,11 @@ def extract_bdmv_title(name, config, directory, title, title_output):
     with tempfile.TemporaryDirectory(prefix=name, suffix=title, dir=temp_directory) as working_directory:
         working_file = os.path.join(working_directory, title_output)
 
-        result = subprocess.run([makemkvcon, "--robot", "--noscan", "mkv", "file:" + directory, title, working_directory], check=True, stdout=subprocess.PIPE, universal_newlines=True)
+        result = exec([makemkvcon, "--robot", "--noscan", "mkv", "file:" + directory, title, working_directory])
         if not os.path.isfile(working_file):
             logging.critical("Expected file %s to have been created", working_file)
             exit(1)
-        removed_tracks = sorted(set(int(track) for track in MAKEMKV_TRACK_REMOVED.findall(result.stdout)))
+        removed_tracks = sorted(set(int(track) for track in MAKEMKV_TRACK_REMOVED.findall(result)))
         logging.debug("The following tracks were removed: %r", removed_tracks)
         all_tracks = [*config["video"], *config["audio"], *config["subtitle"]]
         for track in all_tracks:
@@ -116,12 +128,12 @@ def extract_bdmv_title(name, config, directory, title, title_output):
                 bottom = str(track["cropping"].get("bottom", 0))
                 args += ["--cropping", str(track["track"]) + ":" + left + "," + top + "," + right + "," + bottom]
         logging.debug("Remux args: " + " ".join(args))
-        subprocess.run([mkvmerge, "-o", target_file, *args, working_file], check=True, stdout=(None if arguments.verbose else subprocess.DEVNULL))
+        exec([mkvmerge, "-o", target_file, *args, working_file])
         logging.info("Completed " + config["name"] + " at " + target_file)
 
 def extract_bdmv(name, config, directory):
     logging.info("Processing " + name)
-    result = subprocess.run([makemkvcon, "--robot", "--noscan", "info", directory], check=True, stdout=subprocess.PIPE, universal_newlines=True)
+    result = exec([makemkvcon, "--robot", "--noscan", "info", directory])
     title_file = {}
     title_angle = {}
     title_originalid = {}
@@ -130,7 +142,7 @@ def extract_bdmv(name, config, directory):
     stream_audio = {}
     stream_subtitle = {}
     stream_derived = {}
-    for line in result.stdout.splitlines():
+    for line in result.splitlines():
         if line.startswith("TINFO:"):
             [title, field, code, value] = line[6:].split(",", 3)
             if int(field) == MAKEMKV_SOURCEFILENAME:
@@ -175,7 +187,7 @@ def extract_bdmv(name, config, directory):
         extract_bdmv_title(name, config[source], directory, title, output)
 
 for config_path in config_paths:
-    with open(config_path) as config_file:
+    with open(config_path, encoding="utf8") as config_file:
         config = json.load(config_file)
         defaults = config.pop("", {})
         for path, dirs, files in os.walk(source_directory):
