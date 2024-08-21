@@ -194,6 +194,7 @@ for config_path in config_paths:
             for name in [*dirs, *files]:
                 if not name in config: continue
                 if not name in selection and not "ALL" in selection: continue
+                if name in dirs and not os.path.exists(os.path.join(path, name, "BDMV")): continue
                 for title in config[name]:
                     config[name][title] = dict(copy.deepcopy(defaults), **config[name][title])
                 extract_bdmv(name, config[name], os.path.join(path, name))
