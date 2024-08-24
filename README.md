@@ -105,5 +105,5 @@ The `media.json` file stores definitions for how to handle each movie
 ## TODO
 
 - Use a more stable identifier than folder name for discs
-- Specify chapter names in the definition (does anything use this?)
-- Reference tracks from other titles/BDMVs (ex pull commentary from an older release)
+- Reference tracks from other titles/BDMVs (ex pull commentary/audio from an older release)
+- Improve logging (final summary, warn if an exported track contains forced subtitles, etc)
