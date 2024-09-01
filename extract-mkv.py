@@ -111,10 +111,10 @@ def extract_bdmv_title(name, config, directory, title, title_output):
             
         logging.info("Remuxing " + config["name"])
         args = []
-        args += ["--video-tracks", ",".join([str(track["track"]) for track in config["video"]])]
-        args += ["--audio-tracks", ",".join([str(track["track"]) for track in config["audio"]])]
-        args += ["--subtitle-tracks", ",".join([str(track["track"]) for track in config["subtitle"]])]
-        args += ["--track-order", ",".join(["0:" + str(track["track"]) for track in all_tracks])]
+        if config["video"]: args += ["--video-tracks", ",".join([str(track["track"]) for track in config["video"]])]
+        if config["audio"]: args += ["--audio-tracks", ",".join([str(track["track"]) for track in config["audio"]])]
+        if config["subtitle"]: args += ["--subtitle-tracks", ",".join([str(track["track"]) for track in config["subtitle"]])]
+        if all_tracks: args += ["--track-order", ",".join(["0:" + str(track["track"]) for track in all_tracks])]
         for track in all_tracks:
             if "name" in track: args += ["--track-name", str(track["track"]) + ":" + track["name"]]
             if "language" in track: args += ["--language", str(track["track"]) + ":" + track["language"]]
