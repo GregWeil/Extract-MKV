@@ -61,6 +61,7 @@ def exec(args):
     return output
 
 def normalize_config_streams(config_streams, actual_streams, derived_streams):
+    default_specified = any([config.get("default", False) for config in config_streams])
     for config in config_streams:
         config_track = config["track"] if isinstance(config["track"], dict) else { "index": config["track"] }
         track_index = int(config_track["index"])
@@ -72,6 +73,7 @@ def normalize_config_streams(config_streams, actual_streams, derived_streams):
                 logging.critical("Expected stream %d to be derived for %r", actual_index, config)
                 exit(1)
         config["track"] = actual_index
+        if default_specified: config.setdefault("default", False)
 
 def normalize_config_source(config, video_streams, audio_streams, subtitle_streams, derived_streams):
     config.setdefault("video", [{ "track": 0 }])
