@@ -15,6 +15,7 @@ MakeMKV's command line does not provide most of the options available in the int
 `python ./extract-mkv.py SELECTION`
 
 - **SELECTION**: A comma separated list of disc identifiers, or ALL to extract all discs
+- **--force** (optional): If the output mkv file already exists, overwrite it instead of skipping the title
 - **--verbose** (optional): Log out extra information, as well as MakeMKV and MKVToolNix output
 
 ## Configuration

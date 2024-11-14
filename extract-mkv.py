@@ -42,10 +42,12 @@ if not os.path.isfile(mkvmerge):
     exit(1)
 
 argparser = argparse.ArgumentParser(description="MKV Extractor")
-argparser.add_argument("selection")
-argparser.add_argument("--verbose", action="store_true")
+argparser.add_argument("selection", help="Comma separated configuration keys, or ALL to export everything")
+argparser.add_argument("--force", action="store_true", help="Extract an mkv even if the destination file already exists")
+argparser.add_argument("--verbose", action="store_true", help="Show extra output, including from sub commands")
 arguments = argparser.parse_args()
 selection = arguments.selection.split(",")
+force = arguments.force
 logging.basicConfig(level=(logging.DEBUG if arguments.verbose else logging.INFO), format="%(asctime)s %(levelname)s %(message)s")
 
 def exec(args):
@@ -188,15 +190,29 @@ def extract_bdmv(name, config, directory):
         normalize_config_source(config[source], stream_video.get(title, []), stream_audio.get(title, []), stream_subtitle.get(title, []), stream_derived.get(title, []))
         extract_bdmv_title(name, config[source], directory, title, output)
 
+config = {}
 for config_path in config_paths:
     with open(config_path, encoding="utf8") as config_file:
-        config = json.load(config_file)
-        defaults = config.pop("", {})
-        for path, dirs, files in os.walk(source_directory):
-            for name in [*dirs, *files]:
-                if not name in config: continue
-                if not name in selection and not "ALL" in selection: continue
-                if name in dirs and not os.path.exists(os.path.join(path, name, "BDMV")): continue
-                for title in config[name]:
-                    config[name][title] = dict(copy.deepcopy(defaults), **config[name][title])
-                extract_bdmv(name, config[name], os.path.join(path, name))
+        config_json = json.load(config_file)
+        defaults = config_json.pop("", {})
+        for name, cfg in config_json.items():
+            if not name in selection and not "ALL" in selection: continue
+            for title, title_config in cfg.items():
+                title_config = dict(defaults, **title_config)
+                if not force:
+                    title_path = get_title_output_path(title_config)
+                    if os.path.isfile(title_path):
+                        title_name = os.path.splitext(os.path.basename(title_path))[0]
+                        logging.debug(title_name + " is already present")
+                        continue
+                config.setdefault(name, {})[title] = copy.deepcopy(title_config)
+if not config:
+    logging.warning("Did not find any config matching the selection")
+for path, dirs, files in os.walk(source_directory):
+    for name in files:
+        if not name in config: continue
+        extract_bdmv(name, config.pop(name), os.path.join(path, name))
+    if "BDMV" in dirs and os.path.basename(path) in config:
+        extract_bdmv(name, config.pop(os.path.basename(path)), path)
+if config:
+    logging.info("Did not find " + ",".join(config.keys()))
