@@ -83,6 +83,16 @@ def normalize_config_source(config, video_streams, audio_streams, subtitle_strea
     normalize_config_streams(config.setdefault("audio", [{ "track": 0 }]), audio_streams, derived_streams)
     normalize_config_streams(config.setdefault("subtitle", []), subtitle_streams, derived_streams)
 
+def get_title_display_name(config):
+    name = config["name"]
+    if "year" in config:
+        name = "%s (%i)" % (config["name"], config["year"])
+    if "season" in config and "episode" in config:
+        name = "%s S%02iE%02i" % (name, config["season"], config["episode"])
+    if "version" in config:
+        name = "%s - %s" % (name, config["version"])
+    return name
+
 def get_title_output_path(config):
     path = os.path.join(*config["path"]) if isinstance(config.get("path"), list) else config.get("path", "")
     name = "%s (%i)" % (config["name"], config["year"]) if "year" in config else config["name"]
@@ -96,7 +106,8 @@ def get_title_output_path(config):
 
 def extract_bdmv_title(name, config, directory, title, title_output):
     target_file = get_title_output_path(config)
-    logging.info("Extracting %s", os.path.splitext(os.path.basename(target_file))[0])
+    display_name = get_title_display_name(config)
+    logging.info("Extracting %s", display_name)
     with tempfile.TemporaryDirectory(prefix=name, suffix=title, dir=temp_directory) as working_directory:
         working_file = os.path.join(working_directory, title_output)
 
@@ -114,7 +125,7 @@ def extract_bdmv_title(name, config, directory, title, title_output):
             track["track"] -= sum(1 if index < track["track"] else 0 for index in removed_tracks)
             
         logging.info("Remuxing " + config["name"])
-        args = []
+        args = ["--title", display_name]
         if config["video"]: args += ["--video-tracks", ",".join([str(track["track"]) for track in config["video"]])]
         if config["audio"]: args += ["--audio-tracks", ",".join([str(track["track"]) for track in config["audio"]])]
         if config["subtitle"]: args += ["--subtitle-tracks", ",".join([str(track["track"]) for track in config["subtitle"]])]
@@ -131,12 +142,12 @@ def extract_bdmv_title(name, config, directory, title, title_output):
                 right = str(track["cropping"].get("right", 0))
                 bottom = str(track["cropping"].get("bottom", 0))
                 args += ["--cropping", str(track["track"]) + ":" + left + "," + top + "," + right + "," + bottom]
-        logging.debug("Remux args: " + " ".join(args))
+        logging.debug("Remux args: %s", " ".join(args))
         exec([mkvmerge, "-o", target_file, *args, working_file])
-        logging.info("Completed " + config["name"] + " at " + target_file)
+        logging.info("Completed %s at %s", config["name"], target_file)
 
 def extract_bdmv(name, config, directory):
-    logging.info("Processing " + name)
+    logging.info("Processing %s", name)
     result = exec([makemkvcon, "--robot", "--noscan", "info", directory])
     title_file = {}
     title_angle = {}
@@ -175,15 +186,15 @@ def extract_bdmv(name, config, directory):
         else: source_title[title_file[title] + ":" + title_angle[title]] = title
     for title in title_originalid:
         source_title[title_originalid[title]] = title
-    logging.debug("Identified titles: " + json.dumps(source_title))
+    logging.debug("Identified titles: %s", json.dumps(source_title))
     for source in config:
         title = source_title[source]
         if not title:
-            logging.critical("Did not get a title for " + name + " " + source)
+            logging.critical("Did not get a title for %s %s", name, source)
             exit(1)
         output = title_output[title]
         if not output:
-            logging.critical("Did not get an output file for " + name + " " + source)
+            logging.critical("Did not get an output file for %s %s", name, source)
             exit(1)
         logging.debug("Streams for %s: video=%r audio=%r subtitle=%r derived=%r", source,
             stream_video.get(title, []), stream_audio.get(title, []), stream_subtitle.get(title, []), stream_derived.get(title, []))
@@ -191,23 +202,28 @@ def extract_bdmv(name, config, directory):
         extract_bdmv_title(name, config[source], directory, title, output)
 
 config = {}
+title_names = []
 for config_path in config_paths:
     with open(config_path, encoding="utf8") as config_file:
         config_json = json.load(config_file)
         defaults = config_json.pop("", {})
         for name, cfg in config_json.items():
             if not name in selection and not "ALL" in selection: continue
+            cfg_defaults = cfg.pop("", {})
             for title, title_config in cfg.items():
-                title_config = dict(defaults, **title_config)
+                title_config = { **defaults, **cfg_defaults, **title_config }
+                title_name = get_title_display_name(title_config)
                 if not force:
                     title_path = get_title_output_path(title_config)
                     if os.path.isfile(title_path):
-                        title_name = os.path.splitext(os.path.basename(title_path))[0]
-                        logging.debug(title_name + " is already present")
+                        logging.debug("%s is already present", title_name)
                         continue
                 config.setdefault(name, {})[title] = copy.deepcopy(title_config)
+                title_names.append(title_name)
 if not config:
-    logging.warning("Did not find any config matching the selection")
+    logging.warning("Did not find any %s matching the selection", "config" if force else "unexported config")
+    exit()
+logging.debug("Identified %i titles to export: %s", len(title_names), ", ".join(title_names))
 for path, dirs, files in os.walk(source_directory):
     for name in files:
         if not name in config: continue
@@ -215,4 +231,4 @@ for path, dirs, files in os.walk(source_directory):
     if "BDMV" in dirs and os.path.basename(path) in config:
         extract_bdmv(name, config.pop(os.path.basename(path)), path)
 if config:
-    logging.info("Did not find " + ",".join(config.keys()))
+    logging.info("Did not find %s", ",".join(config.keys()))
