@@ -6,11 +6,13 @@ import logging
 import argparse
 import tempfile
 import subprocess
+from threading import Timer
 
 MAKEMKV_ANGLEINFO = 15
 MAKEMKV_SOURCEFILENAME = 16
 MAKEMKV_ORIGINALTITLEID = 24
 MAKEMKV_OUTPUTFILENAME = 27
+MAKEMKV_OUTPUTSIZEBYTES = 11
 
 MAKEMKV_TYPE = 1
 MAKEMKV_TYPE_VIDEO = 6201
@@ -51,16 +53,39 @@ force = arguments.force
 verbose = arguments.verbose
 logging.basicConfig(level=(logging.DEBUG if verbose else logging.INFO), format="%(asctime)s %(levelname)s %(message)s")
 
-def exec(args):
+def exec(args, output_file = None, output_size = None):
     logging.debug(' '.join(args))
+    timer = None
+    if not verbose and output_file and output_size:
+        def update():
+            nonlocal timer
+            try:
+                percent = os.path.getsize(output_file) / output_size
+            except OSError:
+                pass
+            else:
+                segments = int(percent * 40)
+                print("\r[" + ("#" * segments) + ("-" * (40 - segments)) + "]", end="")
+            timer = Timer(1.0, update)
+            timer.start()
+        print("", end="")
+        update()
     output = ""
-    with subprocess.Popen(args, stdout=subprocess.PIPE, text=True, universal_newlines=True) as process:
-        for line in process.stdout:
-            if arguments.verbose: print(line, end="")
-            output += line
+    try:
+        with subprocess.Popen(args, stdout=subprocess.PIPE, text=True, universal_newlines=True) as process:
+            for line in process.stdout:
+                if arguments.verbose: print(line, end="")
+                output += line
+    finally:
+        if timer:
+            timer.cancel()
+            timer.join()
     if process.returncode != 0:
-        if not arguments.verbose: print(output, end="")
+        if not arguments.verbose:
+            if timer: print("")
+            print(output, end="")
         raise subprocess.CalledProcessError(process.returncode, process.args)
+    elif timer: print("\r" + (" " * 42), end="\r")
     return output
 
 def normalize_config_streams(stream_type, config_streams, all_streams, derived_streams):
@@ -115,14 +140,14 @@ def get_title_output_path(config):
             filename = "%s S%02iE%02i" % (config["name"], config["season"], config["episode"])
     return os.path.join(target_directory, path, name, subpath, filename + ".mkv")
 
-def extract_bdmv_title(name, config, directory, title, title_output):
+def extract_bdmv_title(name, config, directory, title, title_output, title_bytes):
     target_file = get_title_output_path(config)
     display_name = get_title_display_name(config)
     logging.info("Extracting %s", display_name)
     with tempfile.TemporaryDirectory(prefix=name, suffix=title, dir=temp_directory) as working_directory:
         working_file = os.path.join(working_directory, title_output)
 
-        result = exec([makemkvcon, "--robot", "--noscan", "mkv", "file:" + directory, title, working_directory])
+        result = exec([makemkvcon, "--robot", "--noscan", "mkv", "file:" + directory, title, working_directory], working_file, title_bytes)
         if not os.path.isfile(working_file):
             logging.critical("Expected file %s to have been created", working_file)
             exit(1)
@@ -156,7 +181,7 @@ def extract_bdmv_title(name, config, directory, title, title_output):
                 bottom = str(track["cropping"].get("bottom", 0))
                 args += ["--cropping", str(track["track"]) + ":" + left + "," + top + "," + right + "," + bottom]
         logging.debug("Remux args: %s", " ".join(args))
-        exec([mkvmerge, "-o", target_file, *args, working_file])
+        exec([mkvmerge, "-o", target_file, *args, working_file], target_file, title_bytes)
         logging.info("Completed %s", display_name)
 
 def extract_bdmv(name, config, directory):
@@ -166,6 +191,7 @@ def extract_bdmv(name, config, directory):
     title_angle = {}
     title_originalid = {}
     title_output = {}
+    title_bytes = {}
     stream_video = {}
     stream_audio = {}
     stream_subtitle = {}
@@ -181,6 +207,8 @@ def extract_bdmv(name, config, directory):
                 title_originalid[title] = value.strip('"')
             if int(field) == MAKEMKV_OUTPUTFILENAME:
                 title_output[title] = value.strip('"')
+            if int(field) == MAKEMKV_OUTPUTSIZEBYTES:
+                title_bytes[title] = int(value.strip('"'))
         if line.startswith("SINFO:"):
             [title, stream, field, code, value] = line[6:].split(",", 4)
             if int(field) == MAKEMKV_TYPE:
@@ -212,7 +240,7 @@ def extract_bdmv(name, config, directory):
         logging.debug("Streams for %s: video=%r audio=%r subtitle=%r derived=%r", source,
             stream_video.get(title, []), stream_audio.get(title, []), stream_subtitle.get(title, []), stream_derived.get(title, []))
         normalize_config_source(config[source], stream_video.get(title, []), stream_audio.get(title, []), stream_subtitle.get(title, []), stream_derived.get(title, []))
-        extract_bdmv_title(name, config[source], directory, title, output)
+        extract_bdmv_title(name, config[source], directory, title, output, title_bytes[title])
 
 config = {}
 title_names = []
