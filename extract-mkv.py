@@ -63,26 +63,36 @@ def exec(args):
         raise subprocess.CalledProcessError(process.returncode, process.args)
     return output
 
-def normalize_config_streams(config_streams, actual_streams, derived_streams):
-    default_specified = any([config.get("default", False) for config in config_streams])
+def normalize_config_streams(stream_type, config_streams, all_streams, derived_streams):
+    actual_streams = sorted(i for i in all_streams if i not in derived_streams)
+    default_specified = any(config.get("default", False) for config in config_streams)
     for config in config_streams:
+        config["type"] = stream_type
         config_track = config["track"] if isinstance(config["track"], dict) else { "index": config["track"] }
         track_index = int(config_track["index"])
         track_derived = config_track.get("core", False) or config_track.get("forced", False)
-        actual_index = sorted([i for i in actual_streams if i not in derived_streams])[track_index]
+        actual_index = actual_streams[track_index]
         if track_derived:
             actual_index += 1
-            if actual_index not in actual_streams or actual_index not in derived_streams:
-                logging.critical("Expected stream %d to be derived for %r", actual_index, config)
+            if actual_index not in all_streams or actual_index not in derived_streams:
+                logging.critical("Expected stream %i to be derived for %s track %r", actual_index, stream_type, config)
                 exit(1)
         config["track"] = actual_index
         if default_specified: config.setdefault("default", False)
+        config["potential_derived"] = []
+    used_streams = [config["track"] for config in config_streams]
+    for derived_i in derived_streams:
+        if not derived_i in all_streams: continue
+        if derived_i in used_streams: continue
+        actual_i = max(i for i in actual_streams if i <= derived_i)
+        for config in config_streams:
+            if config["track"] == actual_i:
+                config["potential_derived"].append(derived_i)
 
 def normalize_config_source(config, video_streams, audio_streams, subtitle_streams, derived_streams):
-    config.setdefault("video", [{ "track": 0 }])
-    normalize_config_streams(config.setdefault("video", [{ "track": 0 }]), video_streams, derived_streams)
-    normalize_config_streams(config.setdefault("audio", [{ "track": 0 }]), audio_streams, derived_streams)
-    normalize_config_streams(config.setdefault("subtitle", []), subtitle_streams, derived_streams)
+    normalize_config_streams("video", config.setdefault("video", [{ "track": 0 }]), video_streams, derived_streams)
+    normalize_config_streams("audio", config.setdefault("audio", [{ "track": 0 }]), audio_streams, derived_streams)
+    normalize_config_streams("subtitle", config.setdefault("subtitle", []), subtitle_streams, derived_streams)
 
 def get_title_display_name(config):
     name = config["name"]
@@ -124,6 +134,8 @@ def extract_bdmv_title(name, config, directory, title, title_output):
                 logging.critical("Desired track %r was removed because it was empty", track)
                 exit(1)
             track["track"] -= sum(1 if index < track["track"] else 0 for index in removed_tracks)
+            if track["type"] != "audio" and any(not index in removed_tracks for index in track["potential_derived"]):
+                logging.warning("%s track %s has an unused derived track", track["type"].title(), track.get("name", str(track["track"])))
             
         logging.info("Remuxing to %s", target_file)
         args = ["--title", display_name]
