@@ -48,7 +48,8 @@ argparser.add_argument("--verbose", action="store_true", help="Show extra output
 arguments = argparser.parse_args()
 selection = arguments.selection.split(",")
 force = arguments.force
-logging.basicConfig(level=(logging.DEBUG if arguments.verbose else logging.INFO), format="%(asctime)s %(levelname)s %(message)s")
+verbose = arguments.verbose
+logging.basicConfig(level=(logging.DEBUG if verbose else logging.INFO), format="%(asctime)s %(levelname)s %(message)s")
 
 def exec(args):
     logging.debug(' '.join(args))
@@ -120,11 +121,11 @@ def extract_bdmv_title(name, config, directory, title, title_output):
         all_tracks = [*config["video"], *config["audio"], *config["subtitle"]]
         for track in all_tracks:
             if track["track"] in removed_tracks:
-                logging.critical("Desired track %d was removed because it was empty", track)
+                logging.critical("Desired track %r was removed because it was empty", track)
                 exit(1)
             track["track"] -= sum(1 if index < track["track"] else 0 for index in removed_tracks)
             
-        logging.info("Remuxing " + config["name"])
+        logging.info("Remuxing to %s", target_file)
         args = ["--title", display_name]
         if config["video"]: args += ["--video-tracks", ",".join([str(track["track"]) for track in config["video"]])]
         if config["audio"]: args += ["--audio-tracks", ",".join([str(track["track"]) for track in config["audio"]])]
@@ -144,7 +145,7 @@ def extract_bdmv_title(name, config, directory, title, title_output):
                 args += ["--cropping", str(track["track"]) + ":" + left + "," + top + "," + right + "," + bottom]
         logging.debug("Remux args: %s", " ".join(args))
         exec([mkvmerge, "-o", target_file, *args, working_file])
-        logging.info("Completed %s at %s", config["name"], target_file)
+        logging.info("Completed %s", display_name)
 
 def extract_bdmv(name, config, directory):
     logging.info("Processing %s", name)
@@ -207,8 +208,9 @@ for config_path in config_paths:
     with open(config_path, encoding="utf8") as config_file:
         config_json = json.load(config_file)
         defaults = config_json.pop("", {})
+        accept_all = "ALL" in selection or os.path.basename(config_path) in selection
         for name, cfg in config_json.items():
-            if not name in selection and not "ALL" in selection: continue
+            if not name in selection and not accept_all: continue
             cfg_defaults = cfg.pop("", {})
             for title, title_config in cfg.items():
                 title_config = { **defaults, **cfg_defaults, **title_config }
@@ -222,13 +224,21 @@ for config_path in config_paths:
                 title_names.append(title_name)
 if not config:
     logging.warning("Did not find any %s matching the selection", "config" if force else "unexported config")
-    exit()
-logging.debug("Identified %i titles to export: %s", len(title_names), ", ".join(title_names))
-for path, dirs, files in os.walk(source_directory):
-    for name in files:
-        if not name in config: continue
-        extract_bdmv(name, config.pop(name), os.path.join(path, name))
-    if "BDMV" in dirs and os.path.basename(path) in config:
-        extract_bdmv(name, config.pop(os.path.basename(path)), path)
+else:
+    logging.info("Identified %i titles to export: %s", len(title_names), ", ".join(title_names))
+path_queue = [source_directory]
+while path_queue:
+    path = path_queue.pop()
+    try:
+        path_iterator = os.scandir(path)
+    except OSError as error:
+        logging.debug("Failed to scan %s: %s", path, error)
+        continue
+    with path_iterator:
+        for entry in path_iterator:
+            if entry.name in config:
+                extract_bdmv(entry.name, config.pop(entry.name), entry.path)
+            elif entry.is_dir() and not os.path.exists(os.path.join(entry.path, "BDMV")):
+                path_queue.append(entry.path)
 if config:
     logging.info("Did not find %s", ",".join(config.keys()))
