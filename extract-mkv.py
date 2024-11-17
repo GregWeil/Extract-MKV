@@ -6,7 +6,7 @@ import logging
 import argparse
 import tempfile
 import subprocess
-from threading import Timer
+from threading import Thread, Event
 
 MAKEMKV_ANGLEINFO = 15
 MAKEMKV_SOURCEFILENAME = 16
@@ -55,21 +55,21 @@ logging.basicConfig(level=(logging.DEBUG if verbose else logging.INFO), format="
 
 def exec(args, output_file = None, output_size = None):
     logging.debug(' '.join(args))
-    timer = None
+    thread = None
+    stopped = Event()
     if not verbose and output_file and output_size:
         def update():
-            nonlocal timer
-            try:
-                percent = os.path.getsize(output_file) / output_size
-            except OSError:
-                pass
-            else:
-                segments = int(percent * 40)
-                print("\r[" + ("#" * segments) + ("-" * (40 - segments)) + "]", end="")
-            timer = Timer(1.0, update)
-            timer.start()
+            while not stopped.wait(1.0):
+                try:
+                    percent = os.path.getsize(output_file) / output_size
+                except OSError:
+                    pass
+                else:
+                    segments = int(percent * 40)
+                    print("\r[" + ("#" * segments) + ("-" * (40 - segments)) + "]", end="")
         print("", end="")
-        update()
+        thread = Thread(target=update)
+        thread.start()
     output = ""
     try:
         with subprocess.Popen(args, stdout=subprocess.PIPE, text=True, universal_newlines=True) as process:
@@ -77,15 +77,14 @@ def exec(args, output_file = None, output_size = None):
                 if arguments.verbose: print(line, end="")
                 output += line
     finally:
-        if timer:
-            timer.cancel()
-            timer.join()
+        stopped.set()
+        if thread: thread.join()
     if process.returncode != 0:
         if not arguments.verbose:
-            if timer: print("")
+            if thread: print("")
             print(output, end="")
         raise subprocess.CalledProcessError(process.returncode, process.args)
-    elif timer: print("\r" + (" " * 42), end="\r")
+    elif thread: print("\r" + (" " * 42), end="\r")
     return output
 
 def normalize_config_streams(stream_type, config_streams, all_streams, derived_streams):
