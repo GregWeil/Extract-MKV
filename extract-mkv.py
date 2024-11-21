@@ -53,39 +53,38 @@ force = arguments.force
 verbose = arguments.verbose
 logging.basicConfig(level=(logging.DEBUG if verbose else logging.INFO), format="%(asctime)s %(levelname)s %(message)s")
 
-def exec(args, output_file = None, output_size = None):
+def exec(args, parse_progress=None):
     logging.debug(' '.join(args))
-    thread = None
-    stopped = Event()
-    if not verbose and output_file and output_size:
-        def update():
-            while not stopped.wait(1.0):
-                try:
-                    percent = os.path.getsize(output_file) / output_size
-                except OSError:
-                    pass
-                else:
-                    segments = int(percent * 40)
-                    print("\r[" + ("#" * segments) + ("-" * (40 - segments)) + "]", end="")
-        print("", end="")
-        thread = Thread(target=update)
-        thread.start()
+    progress_total = 40
+    progress_segments = -1
     output = ""
-    try:
-        with subprocess.Popen(args, stdout=subprocess.PIPE, text=True, universal_newlines=True) as process:
-            for line in process.stdout:
-                if arguments.verbose: print(line, end="")
-                output += line
-    finally:
-        stopped.set()
-        if thread: thread.join()
+    with subprocess.Popen(args, stdout=subprocess.PIPE, text=True, universal_newlines=True) as process:
+        for line in process.stdout:
+            if verbose: print(line, end="")
+            elif parse_progress:
+                progress = parse_progress(line)
+                if progress != None:
+                    segments = int(progress * progress_total)
+                    if segments != progress_segments:
+                        print("\r[" + ("#" * segments) + ("-" * (progress_total - segments)) + "]", end="")
+                    progress_segments = segments
+            output += line
     if process.returncode != 0:
-        if not arguments.verbose:
-            if thread: print("")
+        if not verbose:
+            if parse_progress: print("")
             print(output, end="")
         raise subprocess.CalledProcessError(process.returncode, process.args)
-    elif thread: print("\r" + (" " * 42), end="\r")
+    elif parse_progress and not verbose: print("\r  " + (" " * progress_total), end="\r")
     return output
+
+def parse_makemkv_progress(line):
+    if not line.startswith("PRGV:"): return None
+    [current, total, max] = line[5:].split(",")
+    return int(total) / int(max)
+
+def parse_mkvmerge_progress(line):
+    if not line.startswith("Progress:"): return None
+    return int(line[10:-2]) / 100
 
 def normalize_config_streams(stream_type, config_streams, all_streams, derived_streams):
     actual_streams = sorted(i for i in all_streams if i not in derived_streams)
@@ -139,14 +138,14 @@ def get_title_output_path(config):
             filename = "%s S%02iE%02i" % (config["name"], config["season"], config["episode"])
     return os.path.join(target_directory, path, name, subpath, filename + ".mkv")
 
-def extract_bdmv_title(name, config, directory, title, title_output, title_bytes):
+def extract_bdmv_title(name, config, directory, title, title_output):
     target_file = get_title_output_path(config)
     display_name = get_title_display_name(config)
     logging.info("Extracting %s", display_name)
     with tempfile.TemporaryDirectory(prefix=name, suffix=title, dir=temp_directory) as working_directory:
         working_file = os.path.join(working_directory, title_output)
 
-        result = exec([makemkvcon, "--robot", "--noscan", "mkv", "file:" + directory, title, working_directory], working_file, title_bytes)
+        result = exec([makemkvcon, "--robot", "--noscan", "--progress=-stdout", "mkv", "file:" + directory, title, working_directory], parse_makemkv_progress)
         if not os.path.isfile(working_file):
             logging.critical("Expected file %s to have been created", working_file)
             exit(1)
@@ -180,12 +179,12 @@ def extract_bdmv_title(name, config, directory, title, title_output, title_bytes
                 bottom = str(track["cropping"].get("bottom", 0))
                 args += ["--cropping", str(track["track"]) + ":" + left + "," + top + "," + right + "," + bottom]
         logging.debug("Remux args: %s", " ".join(args))
-        exec([mkvmerge, "-o", target_file, *args, working_file], target_file, title_bytes)
+        exec([mkvmerge, "-o", target_file, *args, working_file], parse_mkvmerge_progress)
         logging.info("Completed %s", display_name)
 
 def extract_bdmv(name, config, directory):
     logging.info("Processing %s", name)
-    result = exec([makemkvcon, "--robot", "--noscan", "info", directory])
+    result = exec([makemkvcon, "--robot", "--noscan", "--progress=-stdout", "info", "file:" + directory], parse_makemkv_progress)
     title_file = {}
     title_angle = {}
     title_originalid = {}
@@ -239,7 +238,7 @@ def extract_bdmv(name, config, directory):
         logging.debug("Streams for %s: video=%r audio=%r subtitle=%r derived=%r", source,
             stream_video.get(title, []), stream_audio.get(title, []), stream_subtitle.get(title, []), stream_derived.get(title, []))
         normalize_config_source(config[source], stream_video.get(title, []), stream_audio.get(title, []), stream_subtitle.get(title, []), stream_derived.get(title, []))
-        extract_bdmv_title(name, config[source], directory, title, output, title_bytes[title])
+        extract_bdmv_title(name, config[source], directory, title, output)
 
 config = {}
 title_names = []
