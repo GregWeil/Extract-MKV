@@ -58,7 +58,7 @@ def exec(args, parse_progress=None):
     progress_total = 40
     progress_segments = -1
     output = ""
-    with subprocess.Popen(args, stdout=subprocess.PIPE, text=True, universal_newlines=True) as process:
+    with subprocess.Popen(args, stdout=subprocess.PIPE, text=True, universal_newlines=True, encoding="UTF-8") as process:
         for line in process.stdout:
             if verbose: print(line, end="")
             elif parse_progress:
@@ -80,7 +80,7 @@ def exec(args, parse_progress=None):
 def parse_makemkv_progress(line):
     if not line.startswith("PRGV:"): return None
     [current, total, max] = line[5:].split(",")
-    return int(total) / int(max)
+    return int(current) / int(max)
 
 def parse_mkvmerge_progress(line):
     if not line.startswith("Progress:"): return None
