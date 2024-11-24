@@ -77,6 +77,8 @@ The `media.json` file stores definitions for how to handle each movie
 - **version**: The specific version of the movie
 - **season**: The season of the episode
 - **episode**: The episode number within the season
+- **extra**: The name of the extra (setting this value marks this title as an extra)
+- **type**: The extras folder name to use (only used if `extra` is set) (defaults to `extras`)
 - **path**: Where to put the movie relative to `env.json:destination`
 - Track options (track order is determined by definition order)
   - **track**: The index of the track in the MakeMKV interface (second audio track is 1)
@@ -85,7 +87,7 @@ The `media.json` file stores definitions for how to handle each movie
   - **default**: Set true if the track should have the default flag
   - **forced**: Set true if the track should have the forced flag
   - **commentary**: Set true if the track should have the commentary flag
-  - **cropping**: Set `{ left, top, right, bottom }`` to inform players to crop pixels without reencoding (few players actually support this)
+  - **cropping**: Set `{ left, top, right, bottom }` to inform players to crop pixels without reencoding (few players actually support this)
 
 ## Extra notes
 
@@ -95,6 +97,7 @@ The `media.json` file stores definitions for how to handle each movie
   - If version is defined then `[destination]/[path]/[name] ([year])/[name] ([year]) - [version].mkv`
   - If season and episode then `[destination]/[path]/[name] ([year])/Season [season]/[name] S[season]E[episode].mkv`
 - Values in `DISCID=""` act as defaults for all titles in the file, handy to avoid repeatedly specifying the path or series name
+- Values in `TITLEID=""` act as defaults for all titles in the disc, handy to avoid repeatedly specifying the movie name and year
 - Some movies have several titles with the same source file, differentiated using an angle number `TITLEID="00245.mpls:1"`
 - Track indices are zero indexed and follow MakeMKV UI ordering
   - Core audio and forced subtitle tracks are not counted for track numbering

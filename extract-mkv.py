@@ -6,7 +6,6 @@ import logging
 import argparse
 import tempfile
 import subprocess
-from threading import Thread, Event
 
 MAKEMKV_ANGLEINFO = 15
 MAKEMKV_SOURCEFILENAME = 16
@@ -22,6 +21,7 @@ MAKEMKV_TYPE_SUBTITLE = 6203
 MAKEMKV_STREAMFLAGS = 22
 MAKEMKV_STREAMFLAGS_DERIVED = 2048
 
+MAKEMKV_STANDARD_ARGS = ["--robot", "--noscan", "--minlength=0", "--messages=-stdout", "--debug=-stdout", "--progress=-stdout"]
 MAKEMKV_TRACK_REMOVED = re.compile("track #(\\d+?) turned out to be empty and was removed")
 
 env_dir = os.path.dirname(os.path.abspath(__file__))
@@ -121,10 +121,14 @@ def get_title_display_name(config):
     name = config["name"]
     if "year" in config:
         name = "%s (%i)" % (config["name"], config["year"])
-    if "season" in config and "episode" in config:
-        name = "%s S%02iE%02i" % (name, config["season"], config["episode"])
+    if "season" in config:
+        name = "%s S%02i" % (name, config["season"])
+        if "episode" in config:
+            name = "%sE%02i" % (name, config["episode"])
     if "version" in config:
         name = "%s - %s" % (name, config["version"])
+    if "extra" in config:
+        name = "%s - %s" % (name, config["extra"])
     return name
 
 def get_title_output_path(config):
@@ -133,9 +137,12 @@ def get_title_output_path(config):
     subpath = ""
     filename = "%s - %s" % (name, config["version"]) if "version" in config else name
     if "season" in config:
-        subpath = "Season %02i" % config["season"]
+        subpath = os.path.join(subpath, "Season %02i" % config["season"])
         if "episode" in config:
             filename = "%s S%02iE%02i" % (config["name"], config["season"], config["episode"])
+    if "extra" in config:
+        filename = config["extra"]
+        subpath = os.path.join(subpath, config.get("type", "extras"))
     return os.path.join(target_directory, path, name, subpath, filename + ".mkv")
 
 def extract_bdmv_title(name, config, directory, title, title_output):
@@ -145,7 +152,7 @@ def extract_bdmv_title(name, config, directory, title, title_output):
     with tempfile.TemporaryDirectory(prefix=name, suffix=title, dir=temp_directory) as working_directory:
         working_file = os.path.join(working_directory, title_output)
 
-        result = exec([makemkvcon, "--robot", "--noscan", "--progress=-stdout", "mkv", "file:" + directory, title, working_directory], parse_makemkv_progress)
+        result = exec([makemkvcon, *MAKEMKV_STANDARD_ARGS, "mkv", "file:" + directory, title, working_directory], parse_makemkv_progress)
         if not os.path.isfile(working_file):
             logging.critical("Expected file %s to have been created", working_file)
             exit(1)
@@ -184,7 +191,7 @@ def extract_bdmv_title(name, config, directory, title, title_output):
 
 def extract_bdmv(name, config, directory):
     logging.info("Processing %s", name)
-    result = exec([makemkvcon, "--robot", "--noscan", "--progress=-stdout", "info", "file:" + directory], parse_makemkv_progress)
+    result = exec([makemkvcon, *MAKEMKV_STANDARD_ARGS, "info", "file:" + directory], parse_makemkv_progress)
     title_file = {}
     title_angle = {}
     title_originalid = {}
