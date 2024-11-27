@@ -145,7 +145,7 @@ def get_title_output_path(config):
     if "extra" in config:
         filename = config["extra"]
         subpath = os.path.join(subpath, config.get("type", "extras"))
-    return os.path.join(target_directory, path, name, subpath, filename + ".mkv")
+    return os.path.join(target_directory, path, name, subpath, filename + ".mkv").replace("?", "？").replace(":", "꞉")
 
 def extract_bdmv_title(name, config, directory, title, title_output):
     target_file = get_title_output_path(config)
