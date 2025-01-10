@@ -2,6 +2,7 @@ import os
 import re
 import copy
 import json
+import glob
 import logging
 import argparse
 import tempfile
@@ -26,19 +27,25 @@ env_path = os.path.join(env_dir, "env.json")
 with open(env_path) as env_json:
     env = json.load(env_json)
     configs = env["config"] if isinstance(env["config"], list) else [env["config"]]
-    config_paths = [os.path.join(env_dir, config) for config in configs]
+    config_paths = sum([glob.glob(config, root_dir=env_dir) for config in configs], [])
     source_directory = os.path.join(env_dir, env["source"])
     target_directory = os.path.join(env_dir, env["destination"])
     temp_directory = os.path.join(env_dir, env["temp"]) if "temp" in env else None
-    makemkvcon = os.path.join(env_dir, env["makemkvcon"]) if "makemkvcon" in env else "makemkvcon"
-    mkvmerge = os.path.join(env_dir, env["mkvmerge"]) if "mkvmerge" in env else "mkvmerge"
+    makemkvcon = env["makemkvcon"] if "makemkvcon" in env else "makemkvcon"
+    makemkvcon = makemkvcon if isinstance(makemkvcon, list) else [makemkvcon]
+    mkvmerge = env["mkvmerge"] if "mkvmerge" in env else "mkvmerge"
+    mkvmerge = mkvmerge if isinstance(mkvmerge, list) else [mkvmerge]
 
-if not os.path.isfile(makemkvcon):
-    logging.error("Could not find makemkvcon64")
-    exit(1)
-if not os.path.isfile(mkvmerge):
-    logging.error("Could not find mkvmerge")
-    exit(1)
+if makemkvcon[0].startswith(("/", "./", "../")):
+    makemkvcon[0] = os.path.join(env_dir, makemkvcon[0])
+    if not os.path.isfile(makemkvcon[0]):
+        logging.error("Could not find makemkvcon")
+        exit(1)
+if mkvmerge[0].startswith(("/", "./", "../")):
+    mkvmerge[0] = os.path.join(env_dir, mkvmerge[0])
+    if not os.path.isfile(mkvmerge[0]):
+        logging.error("Could not find mkvmerge")
+        exit(1)
 
 argparser = argparse.ArgumentParser(description="MKV Extractor")
 argparser.add_argument("selection", help="Comma separated configuration keys, or ALL to export everything")
@@ -155,12 +162,13 @@ def extract_bdmv_title(name, config, directory, title, title_output):
         all_tracks = [*config["video"], *config["audio"], *config["subtitle"]]
 
         logging.info("Extracting %s", display_name)
-        exec([makemkvcon, *MAKEMKV_STANDARD_ARGS, "mkv", "file:" + directory, title, working_directory], parse_makemkv_progress)
+        exec([*makemkvcon, *MAKEMKV_STANDARD_ARGS, "mkv", "file:" + directory, title, working_directory], parse_makemkv_progress)
+
         if not os.path.isfile(working_file):
             logging.critical("Expected file %s to have been created", working_file)
             exit(1)
         
-        info = json.loads(exec([mkvmerge, "-J", working_file]))
+        info = json.loads(exec([*mkvmerge, "-J", working_file]))
         track_mapping = {}
         for track in info["tracks"]:
             track_mapping[track["properties"]["number"] - 1] = track["id"]
@@ -193,12 +201,12 @@ def extract_bdmv_title(name, config, directory, title, title_output):
                 bottom = str(track["cropping"].get("bottom", 0))
                 args += ["--cropping", str(track["_track"]) + ":" + left + "," + top + "," + right + "," + bottom]
         logging.debug("Remux args: %s", " ".join(args))
-        exec([mkvmerge, "-o", target_file, *args, working_file], parse_mkvmerge_progress)
+        exec([*mkvmerge, "-o", target_file, *args, working_file], parse_mkvmerge_progress)
         logging.info("Completed %s", display_name)
 
 def extract_bdmv(name, config, directory):
     logging.info("Processing %s", name)
-    result = exec([makemkvcon, *MAKEMKV_STANDARD_ARGS, "info", "file:" + directory], parse_makemkv_progress)
+    result = exec([*makemkvcon, *MAKEMKV_STANDARD_ARGS, "info", "file:" + directory], parse_makemkv_progress)
     title_file = {}
     title_angle = {}
     title_originalid = {}

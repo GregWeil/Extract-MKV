@@ -93,6 +93,7 @@ The `media.json` file stores definitions for how to handle each movie
 
 - For DVD ISOs, set `DISCID="file.iso"` and `TITLEID="01"` using the 'Source title ID' shown in MakeMKV
 - Set the env.json config property to an array to split definitions across multiple files
+- The env.json config property can use glob format instead of listing every file
 - Files are generated at `[destination]/[path]/[name] ([year])/[name] ([year]).mkv`
   - If version is defined then `[destination]/[path]/[name] ([year])/[name] ([year]) - [version].mkv`
   - If season and episode then `[destination]/[path]/[name] ([year])/Season [season]/[name] S[season]E[episode].mkv`
@@ -105,6 +106,9 @@ The `media.json` file stores definitions for how to handle each movie
   - To reference forced subtitles for a track set `track: { index: 0, forced: true }`
 - If video tracks are not specified, the first video track is used with all default values
 - If audio tracks are not specified, the first audio track is used with all default values
+- If subtitle tracks are not specified, the output will not have any subtitles included
+- Use the MakeMKV flatpak by setting env.json makemkvcon to `["flatpak", "run", "--command=makemkvcon", "com.makemkv.MakeMKV"]`
+- Use the MKVToolnix flatpak by setting env.json mkvmerge to `["flatpak", "run", "--command=mkvmerge", "org.bunkus.mkvtoolnix-gui"]`
 
 ## TODO
 
