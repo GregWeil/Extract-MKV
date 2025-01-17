@@ -13,6 +13,7 @@ MAKEMKV_SOURCEFILENAME = 16
 MAKEMKV_ORIGINALTITLEID = 24
 MAKEMKV_OUTPUTFILENAME = 27
 MAKEMKV_OUTPUTSIZEBYTES = 11
+MAKEMKV_COMMENT = 49
 
 MAKEMKV_TYPE = 1
 MAKEMKV_TYPE_VIDEO = 6201
@@ -210,6 +211,7 @@ def extract_bdmv(name, config, directory):
     title_file = {}
     title_angle = {}
     title_originalid = {}
+    title_comment = {}
     title_output = {}
     title_bytes = {}
     stream_video = {}
@@ -225,6 +227,8 @@ def extract_bdmv(name, config, directory):
                 title_angle[title] = value.strip('"')
             if int(field) == MAKEMKV_ORIGINALTITLEID:
                 title_originalid[title] = value.strip('"')
+            if int(field) == MAKEMKV_COMMENT:
+                title_comment[title] = value.strip('"')
             if int(field) == MAKEMKV_OUTPUTFILENAME:
                 title_output[title] = value.strip('"')
             if int(field) == MAKEMKV_OUTPUTSIZEBYTES:
@@ -245,6 +249,7 @@ def extract_bdmv(name, config, directory):
     for title in title_file:
         if not title in title_angle: source_title[title_file[title]] = title
         else: source_title[title_file[title] + ":" + title_angle[title]] = title
+        if title in title_comment: source_title[title_comment[title]] = title
     for title in title_originalid:
         source_title[title_originalid[title]] = title
     logging.debug("Identified titles: %s", json.dumps(source_title))

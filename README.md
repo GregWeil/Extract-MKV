@@ -91,6 +91,7 @@ The `media.json` file stores definitions for how to handle each movie
 
 ## Extra notes
 
+- Some movies include a comment like `FPL_MainFeature` on certain titles, this can be used as a `TITLEID`
 - For DVD ISOs, set `DISCID="file.iso"` and `TITLEID="01"` using the 'Source title ID' shown in MakeMKV
 - Set the env.json config property to an array to split definitions across multiple files
 - The env.json config property can use glob format instead of listing every file
