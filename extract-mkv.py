@@ -93,40 +93,6 @@ def parse_mkvmerge_progress(line):
     if not line.startswith("Progress:"): return None
     return int(line[10:-2]) / 100
 
-def normalize_config_streams(stream_type, config_streams, all_streams, derived_streams):
-    actual_streams = sorted(i for i in all_streams if i not in derived_streams)
-    default_specified = any(config.get("default", False) for config in config_streams)
-    for config in config_streams:
-        config["_type"] = stream_type
-        config_track = config["track"] if isinstance(config["track"], dict) else { "index": config["track"] }
-        track_index = int(config_track["index"])
-        track_derived = config_track.get("core", False) or config_track.get("forced", False)
-        if track_index >= len(actual_streams):
-            logging.critical("Could not find %s track %i, only %i tracks found", stream_type, track_index, len(actual_streams))
-            exit(1)
-        actual_index = actual_streams[track_index]
-        if track_derived:
-            actual_index += 1
-            if actual_index not in all_streams or actual_index not in derived_streams:
-                logging.critical("Expected stream %i to be derived for %s track %r", actual_index, stream_type, config["track"])
-                exit(1)
-        if default_specified: config.setdefault("default", False)
-        config["_track"] = actual_index
-        config["_potential_derived"] = []
-    used_streams = [config["_track"] for config in config_streams]
-    for derived_i in derived_streams:
-        if not derived_i in all_streams: continue
-        if derived_i in used_streams: continue
-        actual_i = max(i for i in actual_streams if i <= derived_i)
-        for config in config_streams:
-            if config["_track"] == actual_i:
-                config["_potential_derived"].append(derived_i)
-
-def normalize_config_source(config, video_streams, audio_streams, subtitle_streams, derived_streams):
-    normalize_config_streams("video", config.setdefault("video", [{ "track": 0 }]), video_streams, derived_streams)
-    normalize_config_streams("audio", config.setdefault("audio", [{ "track": 0 }]), audio_streams, derived_streams)
-    normalize_config_streams("subtitle", config.setdefault("subtitle", []), subtitle_streams, derived_streams)
-
 def get_title_display_name(config):
     name = config["name"]
     if "year" in config:
@@ -141,6 +107,41 @@ def get_title_display_name(config):
         name = "%s - %s" % (name, config["extra"])
     return name
 
+def normalize_config_streams(display_name, stream_type, config_streams, all_streams, derived_streams):
+    actual_streams = sorted(i for i in all_streams if i not in derived_streams)
+    default_specified = any(config.get("default", False) for config in config_streams)
+    for config in config_streams:
+        config["_type"] = stream_type
+        config_track = config["track"] if isinstance(config["track"], dict) else { "index": config["track"] }
+        track_index = int(config_track["index"])
+        track_derived = config_track.get("core", False) or config_track.get("forced", False)
+        if track_index >= len(actual_streams):
+            logging.critical("Failed to normalize %s: Could not find %s track %i, only %i tracks found", display_name, stream_type, track_index, len(actual_streams))
+            exit(1)
+        actual_index = actual_streams[track_index]
+        if track_derived:
+            actual_index += 1
+            if actual_index not in all_streams or actual_index not in derived_streams:
+                logging.critical("Failed to normalize %s: Expected stream %i to be derived for %s track %r", display_name, actual_index, stream_type, config["track"])
+                exit(1)
+        if default_specified: config.setdefault("default", False)
+        config["_track"] = actual_index
+        config["_potential_derived"] = []
+    used_streams = [config["_track"] for config in config_streams]
+    for derived_i in derived_streams:
+        if not derived_i in all_streams: continue
+        if derived_i in used_streams: continue
+        actual_i = max(i for i in actual_streams if i <= derived_i)
+        for config in config_streams:
+            if config["_track"] == actual_i:
+                config["_potential_derived"].append(derived_i)
+
+def normalize_config_source(config, video_streams, audio_streams, subtitle_streams, derived_streams):
+    display_name = get_title_display_name(config)
+    normalize_config_streams(display_name, "video", config.setdefault("video", [{ "track": 0 }]), video_streams, derived_streams)
+    normalize_config_streams(display_name, "audio", config.setdefault("audio", [{ "track": 0 }]), audio_streams, derived_streams)
+    normalize_config_streams(display_name, "subtitle", config.setdefault("subtitle", []), subtitle_streams, derived_streams)
+
 def get_title_output_path(config):
     path = os.path.join(*config["path"]) if isinstance(config.get("path"), list) else config.get("path", "")
     name = "%s (%i)" % (config["name"], config["year"]) if "year" in config else config["name"]
@@ -153,7 +154,10 @@ def get_title_output_path(config):
     if "extra" in config:
         filename = config["extra"]
         subpath = os.path.join(subpath, config.get("type", "extras"))
-    return os.path.join(target_directory, path, name, subpath, filename + ".mkv").replace("?", "？").replace(":", "꞉")
+    output = os.path.join(target_directory, path, name, subpath, filename + ".mkv")
+    output = re.sub(r'([\s\.\\/])"([^\s\.\\/])', r'\1“\2', output)
+    output = re.sub(r'([^\s\.\\/])"([\s\.\\/])', r'\1”\2', output)
+    return output.replace('"','＂').replace("?", "？").replace(":", "꞉")
 
 def extract_bdmv_title(name, config, directory, title, title_output):
     target_file = get_title_output_path(config)
