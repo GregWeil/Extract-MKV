@@ -253,9 +253,10 @@ def extract_bdmv(name, config, directory):
     for title in title_file:
         if not title in title_angle: source_title[title_file[title]] = title
         else: source_title[title_file[title] + ":" + title_angle[title]] = title
-        if title in title_comment: source_title[title_comment[title]] = title
     for title in title_originalid:
         source_title[title_originalid[title]] = title
+    for title in title_comment:
+        source_title[title_comment[title]] = title
     logging.debug("Identified titles: %s", json.dumps(source_title))
     for source in config:
         title = source_title[source]
