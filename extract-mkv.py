@@ -142,9 +142,14 @@ def normalize_config_source(config, video_streams, audio_streams, subtitle_strea
     normalize_config_streams(display_name, "audio", config.setdefault("audio", [{ "track": 0 }]), audio_streams, derived_streams)
     normalize_config_streams(display_name, "subtitle", config.setdefault("subtitle", []), subtitle_streams, derived_streams)
 
+def sanitize(value):
+    value = re.sub(r'(^|[\s\.\\/])"([^\s\.\\/])', r'\1“\2', value)
+    value = re.sub(r'([^\s\.\\/])"([\s\.\\/]|$)', r'\1”\2', value)
+    return value.replace('"','＂').replace("?", "？").replace(":", "꞉").replace('/','⧸').replace('\\', '⧹')
+
 def get_title_output_path(config):
     path = os.path.join(*config["path"]) if isinstance(config.get("path"), list) else config.get("path", "")
-    name = "%s (%i)" % (config["name"], config["year"]) if "year" in config else config["name"]
+    name = sanitize("%s (%i)" % (config["name"], config["year"]) if "year" in config else config["name"])
     subpath = ""
     filename = "%s - %s" % (name, config["version"]) if "version" in config else name
     if "season" in config:
@@ -154,10 +159,7 @@ def get_title_output_path(config):
     if "extra" in config:
         filename = config["extra"]
         subpath = os.path.join(subpath, config.get("type", "extras"))
-    output = os.path.join(target_directory, path, name, subpath, filename + ".mkv")
-    output = re.sub(r'([\s\.\\/])"([^\s\.\\/])', r'\1“\2', output)
-    output = re.sub(r'([^\s\.\\/])"([\s\.\\/])', r'\1”\2', output)
-    return output.replace('"','＂').replace("?", "？").replace(":", "꞉")
+    return os.path.join(target_directory, path, name, subpath, sanitize(filename) + ".mkv")
 
 def extract_bdmv_title(name, config, directory, title, title_output):
     target_file = get_title_output_path(config)
