@@ -143,9 +143,8 @@ def normalize_config_source(config, video_streams, audio_streams, subtitle_strea
     normalize_config_streams(display_name, "subtitle", config.setdefault("subtitle", []), subtitle_streams, derived_streams)
 
 def sanitize(value):
-    value = re.sub(r'(^|[\s\.\\/])"([^\s\.\\/])', r'\1“\2', value)
-    value = re.sub(r'([^\s\.\\/])"([\s\.\\/]|$)', r'\1”\2', value)
-    value = value.replace('"','＂').replace("?", "？").replace(":", "꞉").replace('*', '✳').replace('|', '⏐')
+    value = re.sub(r'(^|[\s\.\\/])"([^\s"](?:[^"]*[^\s"])?)"([\s\.\\/]|$)', r'\1“\2”\3', value).replace('"','＂')
+    value = value.replace('?', '？').replace(':', '꞉').replace('*', '✳').replace('|', '⏐')
     return value.replace('<', '＜').replace('>', '＞').replace('/','⧸').replace('\\', '⧹')
 
 def get_title_output_path(config):
