@@ -7,6 +7,7 @@ import logging
 import argparse
 import tempfile
 import subprocess
+import hashlib
 
 MAKEMKV_ANGLEINFO = 15
 MAKEMKV_SOURCEFILENAME = 16
@@ -282,7 +283,8 @@ for config_path in config_paths:
         defaults = config_json.pop("", {})
         accept_all = "ALL" in selection or os.path.basename(config_path) in selection
         for name, cfg in config_json.items():
-            if not name in selection and not accept_all: continue
+            names = [s.strip() for s in name.split(":")]
+            if not set(names) & set(selection) and not accept_all: continue
             cfg_defaults = cfg.pop("", {})
             for title, title_config in cfg.items():
                 title_config = { **defaults, **cfg_defaults, **title_config }
@@ -292,12 +294,13 @@ for config_path in config_paths:
                     if os.path.isfile(title_path):
                         logging.debug("%s is already present", title_name)
                         continue
-                config.setdefault(name, {})[title] = copy.deepcopy(title_config)
+                config.setdefault(names[-1], {})[title] = copy.deepcopy(title_config)
                 title_names.append(title_name)
 if not config:
     logging.warning("Did not find any %s matching the selection", "config" if force else "unexported config")
 else:
     logging.info("Identified %i titles to export: %s", len(title_names), ", ".join(title_names))
+
 path_queue = [source_directory]
 while path_queue:
     path = path_queue.pop()
@@ -308,7 +311,14 @@ while path_queue:
         continue
     with path_iterator:
         for entry in path_iterator:
-            if entry.name in config:
+            unit_key_hash = None
+            unit_key_path = os.path.join(entry.path, "MAKEMKV", "AACS", "Unit_Key_RO.inf")
+            if os.path.exists(unit_key_path):
+                with open(unit_key_path, "rb") as unit_key_file:
+                    unit_key_hash = hashlib.file_digest(unit_key_file, "sha1").hexdigest()
+            if unit_key_hash in config:
+                extract_bdmv(entry.name, config.pop(unit_key_hash), entry.path)
+            elif entry.name in config:
                 extract_bdmv(entry.name, config.pop(entry.name), entry.path)
             elif entry.is_dir() and not os.path.exists(os.path.join(entry.path, "BDMV")):
                 path_queue.append(entry.path)
