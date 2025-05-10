@@ -94,6 +94,11 @@ def parse_mkvmerge_progress(line):
     if not line.startswith("Progress:"): return None
     return int(line[10:-2]) / 100
 
+def sanitize(value):
+    value = re.sub(r'(^|[\s\.\\/])"([^\s"](?:[^"]*[^\s"])?)"([\s\.\\/]|$)', r'\1“\2”\3', value).replace('"','＂')
+    value = value.replace('?', '？').replace(':', '꞉').replace('*', '✳').replace('|', '⏐')
+    return value.replace('<', '＜').replace('>', '＞').replace('/','⧸').replace('\\', '⧹')
+
 def get_title_display_name(config):
     name = config["name"]
     if "year" in config:
@@ -107,6 +112,20 @@ def get_title_display_name(config):
     if "extra" in config:
         name = "%s - %s" % (name, config["extra"])
     return name
+
+def get_title_output_path(config):
+    path = os.path.join(*config["path"]) if isinstance(config.get("path"), list) else config.get("path", "")
+    name = sanitize("%s (%i)" % (config["name"], config["year"]) if "year" in config else config["name"])
+    subpath = ""
+    filename = "%s - %s" % (name, config["version"]) if "version" in config else name
+    if "season" in config:
+        subpath = os.path.join(subpath, "Season %02i" % config["season"])
+        if "episode" in config:
+            filename = "%s S%02iE%02i" % (config["name"], config["season"], config["episode"])
+    if "extra" in config:
+        filename = config["extra"]
+        subpath = os.path.join(subpath, config.get("type", "extras"))
+    return os.path.join(target_directory, path, name, subpath, sanitize(filename) + ".mkv")
 
 def normalize_config_streams(display_name, stream_type, config_streams, all_streams, derived_streams):
     actual_streams = sorted(i for i in all_streams if i not in derived_streams)
@@ -142,25 +161,6 @@ def normalize_config_source(config, video_streams, audio_streams, subtitle_strea
     normalize_config_streams(display_name, "video", config.setdefault("video", [{ "track": 0 }]), video_streams, derived_streams)
     normalize_config_streams(display_name, "audio", config.setdefault("audio", [{ "track": 0 }]), audio_streams, derived_streams)
     normalize_config_streams(display_name, "subtitle", config.setdefault("subtitle", []), subtitle_streams, derived_streams)
-
-def sanitize(value):
-    value = re.sub(r'(^|[\s\.\\/])"([^\s"](?:[^"]*[^\s"])?)"([\s\.\\/]|$)', r'\1“\2”\3', value).replace('"','＂')
-    value = value.replace('?', '？').replace(':', '꞉').replace('*', '✳').replace('|', '⏐')
-    return value.replace('<', '＜').replace('>', '＞').replace('/','⧸').replace('\\', '⧹')
-
-def get_title_output_path(config):
-    path = os.path.join(*config["path"]) if isinstance(config.get("path"), list) else config.get("path", "")
-    name = sanitize("%s (%i)" % (config["name"], config["year"]) if "year" in config else config["name"])
-    subpath = ""
-    filename = "%s - %s" % (name, config["version"]) if "version" in config else name
-    if "season" in config:
-        subpath = os.path.join(subpath, "Season %02i" % config["season"])
-        if "episode" in config:
-            filename = "%s S%02iE%02i" % (config["name"], config["season"], config["episode"])
-    if "extra" in config:
-        filename = config["extra"]
-        subpath = os.path.join(subpath, config.get("type", "extras"))
-    return os.path.join(target_directory, path, name, subpath, sanitize(filename) + ".mkv")
 
 def extract_bdmv_title(name, config, directory, title, title_output):
     target_file = get_title_output_path(config)
@@ -212,9 +212,9 @@ def extract_bdmv_title(name, config, directory, title, title_output):
         exec([*mkvmerge, "-o", target_file, *args, working_file], parse_mkvmerge_progress)
         logging.info("Completed %s", display_name)
 
-def extract_bdmv(name, config, directory):
-    logging.info("Processing %s", name)
-    result = exec([*makemkvcon, *MAKEMKV_STANDARD_ARGS, "info", "file:" + directory], parse_makemkv_progress)
+def scan_bdmv(name, path):
+    logging.info("Scanning %s", path if verbose else name)
+    result = exec([*makemkvcon, *MAKEMKV_STANDARD_ARGS, "info", "file:" + path], parse_makemkv_progress)
     title_file = {}
     title_angle = {}
     title_originalid = {}
@@ -261,19 +261,23 @@ def extract_bdmv(name, config, directory):
     for title in title_comment:
         source_title[title_comment[title]] = title
     logging.debug("Identified titles: %s", json.dumps(source_title))
+    return { "titles": source_title, "output": title_output, "bytes": title_bytes, "video": stream_video, "audio": stream_audio, "subtitle": stream_subtitle, "derived": stream_derived }
+
+def extract_bdmv(name, config, path):
+    bdmv = scan_bdmv(name, path)
     for source in config:
-        title = source_title[source]
+        title = bdmv["titles"][source]
         if not title:
             logging.critical("Did not get a title for %s %s", name, source)
             exit(1)
-        output = title_output[title]
+        output = bdmv["output"][title]
         if not output:
             logging.critical("Did not get an output file for %s %s", name, source)
             exit(1)
         logging.debug("Streams for %s: video=%r audio=%r subtitle=%r derived=%r", source,
-            stream_video.get(title, []), stream_audio.get(title, []), stream_subtitle.get(title, []), stream_derived.get(title, []))
-        normalize_config_source(config[source], stream_video.get(title, []), stream_audio.get(title, []), stream_subtitle.get(title, []), stream_derived.get(title, []))
-        extract_bdmv_title(name, config[source], directory, title, output)
+            bdmv["video"].get(title, []), bdmv["audio"].get(title, []), bdmv["subtitle"].get(title, []), bdmv["derived"].get(title, []))
+        normalize_config_source(config[source], bdmv["video"].get(title, []), bdmv["audio"].get(title, []), bdmv["subtitle"].get(title, []), bdmv["derived"].get(title, []))
+        extract_bdmv_title(name, config[source], path, title, output)
 
 config = {}
 title_names = []
