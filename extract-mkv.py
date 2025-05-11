@@ -261,26 +261,37 @@ def scan_bdmv(name, path):
     for title in title_comment:
         source_title[title_comment[title]] = title
     logging.debug("Identified titles: %s", json.dumps(source_title))
-    return { "titles": source_title, "output": title_output, "bytes": title_bytes, "video": stream_video, "audio": stream_audio, "subtitle": stream_subtitle, "derived": stream_derived }
+    return {
+        "name": name,
+        "path": path,
+        "titles": source_title,
+        "output": title_output,
+        "bytes": title_bytes,
+        "video": stream_video,
+        "audio": stream_audio,
+        "subtitle": stream_subtitle,
+        "derived": stream_derived
+    }
 
-def extract_bdmv(name, config, path):
-    bdmv = scan_bdmv(name, path)
-    for source in config:
-        title = bdmv["titles"][source]
-        if not title:
-            logging.critical("Did not get a title for %s %s", name, source)
-            exit(1)
-        output = bdmv["output"][title]
-        if not output:
-            logging.critical("Did not get an output file for %s %s", name, source)
-            exit(1)
-        logging.debug("Streams for %s: video=%r audio=%r subtitle=%r derived=%r", source,
-            bdmv["video"].get(title, []), bdmv["audio"].get(title, []), bdmv["subtitle"].get(title, []), bdmv["derived"].get(title, []))
-        normalize_config_source(config[source], bdmv["video"].get(title, []), bdmv["audio"].get(title, []), bdmv["subtitle"].get(title, []), bdmv["derived"].get(title, []))
-        extract_bdmv_title(name, config[source], path, title, output)
+def extract_title(config, images):
+    bdmv = images[config["_source_image"][-1]]
+    if not bdmv:
+        logging.critical("Expected to have found %s", config["_source_image"][0])
+        exit(1)
+    title = bdmv["titles"][config["_source_title"]]
+    if not title:
+        logging.critical("Did not get a title for %s %s", bdmv["name"], config["_source_title"])
+        exit(1)
+    output = bdmv["output"][title]
+    if not output:
+        logging.critical("Did not get an output file for %s %s", bdmv["name"], config["_source_title"])
+        exit(1)
+    logging.debug("Streams for %s: video=%r audio=%r subtitle=%r derived=%r", bdmv["name"],
+        bdmv["video"].get(title, []), bdmv["audio"].get(title, []), bdmv["subtitle"].get(title, []), bdmv["derived"].get(title, []))
+    normalize_config_source(config, bdmv["video"].get(title, []), bdmv["audio"].get(title, []), bdmv["subtitle"].get(title, []), bdmv["derived"].get(title, []))
+    extract_bdmv_title(bdmv["name"], config, bdmv["path"], title, output)
 
-config = {}
-title_names = []
+titles = []
 for config_path in config_paths:
     with open(config_path, encoding="utf8") as config_file:
         config_json = json.load(config_file)
@@ -292,18 +303,21 @@ for config_path in config_paths:
             cfg_defaults = cfg.pop("", {})
             for title, title_config in cfg.items():
                 title_config = { **defaults, **cfg_defaults, **title_config }
-                title_name = get_title_display_name(title_config)
                 if not force:
                     title_path = get_title_output_path(title_config)
                     if os.path.isfile(title_path):
-                        logging.debug("%s is already present", title_name)
+                        logging.debug("%s is already present", get_title_display_name(title_config))
                         continue
-                config.setdefault(names[-1], {})[title] = copy.deepcopy(title_config)
-                title_names.append(title_name)
-if not config:
+                title_config["_source_image"] = names
+                title_config["_source_title"] = title
+                titles.append(title_config)
+if not titles:
     logging.warning("Did not find any %s matching the selection", "config" if force else "unexported config")
 else:
-    logging.info("Identified %i titles to export: %s", len(title_names), ", ".join(title_names))
+    logging.info("Identified %i titles to export: %s", len(titles), ", ".join([get_title_display_name(title) for title in titles]))
+
+required_images = set([title["_source_image"][-1] for title in titles])
+found_images = {}
 
 path_queue = [source_directory]
 while path_queue:
@@ -320,11 +334,16 @@ while path_queue:
             if os.path.exists(unit_key_path):
                 with open(unit_key_path, "rb") as unit_key_file:
                     unit_key_hash = hashlib.file_digest(unit_key_file, "sha1").hexdigest()
-            if unit_key_hash in config:
-                extract_bdmv(entry.name, config.pop(unit_key_hash), entry.path)
-            elif entry.name in config:
-                extract_bdmv(entry.name, config.pop(entry.name), entry.path)
+            if unit_key_hash in required_images or entry.name in required_images:
+                bdmv = scan_bdmv(entry.name, entry.path)
+                if unit_key_hash: found_images[unit_key_hash] = bdmv
+                found_images[entry.name] = bdmv
+                for title in titles[:]:
+                    if not title["_source_image"][-1] in found_images: continue
+                    extract_title(title, found_images)
+                    titles.remove(title)
             elif entry.is_dir() and not os.path.exists(os.path.join(entry.path, "BDMV")):
                 path_queue.append(entry.path)
-if config:
-    logging.info("Did not find %s", ",".join(config.keys()))
+if titles:
+    missing_images = set([title["_source_image"][0] for title in titles if not title["_source_image"][-1] in found_images])
+    logging.info("Did not find %s", ",".join(missing_images))

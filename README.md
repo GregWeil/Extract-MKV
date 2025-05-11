@@ -94,6 +94,8 @@ The `media.json` file stores definitions for how to handle each movie
 - Some movies include a comment like `FPL_MainFeature` on certain titles, this can be used as a `TITLEID`
 - For DVD ISOs, set `DISCID="file.iso"` and `TITLEID="01"` using the 'Source title ID' shown in MakeMKV
 - Uniquely identify BDMVs with a sha1 hash of `MAKEMKV/AACS/Unit_Key_RO.inf`: `DISCID="[DISC_NAME]:[SHA1]"`
+  - If a SHA1 hash is specified then DISC_NAME will not be used for identification and is only for display
+  - Hashes are only used for BDMVs, ISOs are not hashed and will not be found if a hash is specified
 - Set the env.json config property to an array to split definitions across multiple files
 - The env.json config property can use glob format instead of listing every file
 - Files are generated at `[destination]/[path]/[name] ([year])/[name] ([year]).mkv`
