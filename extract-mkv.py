@@ -127,90 +127,66 @@ def get_title_output_path(config):
         subpath = os.path.join(subpath, config.get("type", "extras"))
     return os.path.join(target_directory, path, name, subpath, sanitize(filename) + ".mkv")
 
-def normalize_config_streams(display_name, stream_type, config_streams, all_streams, derived_streams):
-    actual_streams = sorted(i for i in all_streams if i not in derived_streams)
+def normalize_bdmv_title_streams(stream_type, config_streams, bdmv_streams, bdmv_derived, track_mapping):
+    actual_bdmv_streams = sorted(i for i in bdmv_streams if i not in bdmv_derived)
     default_specified = any(config.get("default", False) for config in config_streams)
+    used_bdmv_streams = []
     for config in config_streams:
-        config["_type"] = stream_type
         config_track = config["track"] if isinstance(config["track"], dict) else { "index": config["track"] }
         track_index = int(config_track["index"])
-        track_derived = config_track.get("core", False) or config_track.get("forced", False)
-        if track_index >= len(actual_streams):
-            logging.critical("Failed to normalize %s: Could not find %s track %i, only %i tracks found", display_name, stream_type, track_index, len(actual_streams))
+        if track_index >= len(actual_bdmv_streams):
+            logging.critical("Failed to normalize %r: Could not find %s track %i, only %i tracks found", config, stream_type, track_index, len(actual_bdmv_streams))
             exit(1)
-        actual_index = actual_streams[track_index]
-        if track_derived:
+        actual_index = actual_bdmv_streams[track_index]
+        if config_track.get("core", False) or config_track.get("forced", False):
             actual_index += 1
-            if actual_index not in all_streams or actual_index not in derived_streams:
-                logging.critical("Failed to normalize %s: Expected stream %i to be derived for %s track %r", display_name, actual_index, stream_type, config["track"])
+            if actual_index not in bdmv_streams or actual_index not in bdmv_derived:
+                logging.critical("Failed to normalize %r: Expected stream %i to be derived for %s track %i", config, actual_index, stream_type, track_index)
                 exit(1)
-        if default_specified: config.setdefault("default", False)
-        config["_track"] = actual_index
-        config["_potential_derived"] = []
-    used_streams = [config["_track"] for config in config_streams]
-    for derived_i in derived_streams:
-        if not derived_i in all_streams: continue
-        if derived_i in used_streams: continue
-        actual_i = max(i for i in actual_streams if i <= derived_i)
-        for config in config_streams:
-            if config["_track"] == actual_i:
-                config["_potential_derived"].append(derived_i)
-
-def normalize_config_source(config, video_streams, audio_streams, subtitle_streams, derived_streams):
-    display_name = get_title_display_name(config)
-    normalize_config_streams(display_name, "video", config.setdefault("video", [{ "track": 0 }]), video_streams, derived_streams)
-    normalize_config_streams(display_name, "audio", config.setdefault("audio", [{ "track": 0 }]), audio_streams, derived_streams)
-    normalize_config_streams(display_name, "subtitle", config.setdefault("subtitle", []), subtitle_streams, derived_streams)
-
-def extract_bdmv_title(name, config, directory, title, title_output):
-    target_file = get_title_output_path(config)
-    display_name = get_title_display_name(config)
-    with tempfile.TemporaryDirectory(prefix=name, suffix=title, dir=temp_directory) as working_directory:
-        working_file = os.path.join(working_directory, title_output)
-        all_tracks = [*config["video"], *config["audio"], *config["subtitle"]]
-
-        logging.info("Extracting %s", display_name)
-        exec([*makemkvcon, *MAKEMKV_STANDARD_ARGS, "mkv", "file:" + directory, title, working_directory], parse_makemkv_progress)
-
-        if not os.path.isfile(working_file):
-            logging.critical("Expected file %s to have been created", working_file)
+        if actual_index not in track_mapping:
+            logging.critical("%s track %r not not found in the extracted mkv", stream_type.title(), config_track)
             exit(1)
-        
-        info = json.loads(exec([*mkvmerge, "-J", working_file]))
-        track_mapping = {}
-        for track in info["tracks"]:
-            track_mapping[track["properties"]["number"] - 1] = track["id"]
-        logging.debug("Extracted track mapping: %r", track_mapping)
-        for track in all_tracks:
-            if not track["_track"] in track_mapping:
-                logging.critical("%s track %r not not found in the extracted mkv", track["_type"], track["track"])
-                exit(1)
-            track["_track"] = track_mapping[track["_track"]]
-            if track["_type"] == "audio": continue
-            if any(index in track_mapping for index in track["_potential_derived"]):
-                logging.warning("%s track %r has an unused derived track", track["_type"].title(), track["track"])
-            
-        logging.info("Remuxing to %s", target_file)
-        args = ["--title", display_name]
-        if config["video"]: args += ["--video-tracks", ",".join([str(track["_track"]) for track in config["video"]])]
-        if config["audio"]: args += ["--audio-tracks", ",".join([str(track["_track"]) for track in config["audio"]])]
-        if config["subtitle"]: args += ["--subtitle-tracks", ",".join([str(track["_track"]) for track in config["subtitle"]])]
-        if all_tracks: args += ["--track-order", ",".join(["0:" + str(track["_track"]) for track in all_tracks])]
-        for track in all_tracks:
-            if "name" in track: args += ["--track-name", str(track["_track"]) + ":" + track["name"]]
-            if "language" in track: args += ["--language", str(track["_track"]) + ":" + track["language"]]
-            if "default" in track: args += ["--default-track-flag", str(track["_track"]) + ":" + ("1" if track["default"] else "0")]
-            if "forced" in track: args += ["--forced-display-flag", str(track["_track"]) + ":" + ("1" if track["forced"] else "0")]
-            if "commentary" in track: args += ["--commentary-flag", str(track["_track"]) + ":" + ("1" if track["commentary"] else "0")]
-            if "cropping" in track:
-                left = str(track["cropping"].get("left", 0))
-                top = str(track["cropping"].get("top", 0))
-                right = str(track["cropping"].get("right", 0))
-                bottom = str(track["cropping"].get("bottom", 0))
-                args += ["--cropping", str(track["_track"]) + ":" + left + "," + top + "," + right + "," + bottom]
-        logging.debug("Remux args: %s", " ".join(args))
-        exec([*mkvmerge, "-o", target_file, *args, working_file], parse_mkvmerge_progress)
-        logging.info("Completed %s", display_name)
+        if default_specified: config.setdefault("default", False)
+        config["_track"] = track_mapping[actual_index]
+        used_bdmv_streams.append(actual_index)
+    for derived_i in bdmv_derived:
+        if stream_type == "audio": continue
+        if derived_i not in bdmv_streams: continue
+        if derived_i not in track_mapping: continue
+        if derived_i in used_bdmv_streams: continue
+        actual_i = max(i for i in actual_bdmv_streams if i <= derived_i)
+        if actual_i not in used_bdmv_streams: continue
+        logging.warning("%s track %i has an unused derived track", stream_type.title(), actual_bdmv_streams.index(actual_i))
+
+def normalize_bdmv_title(config, bdmv, title, title_file):
+    title_id = bdmv["titles"][title]
+    logging.debug("Streams for %s %s: video=%r audio=%r subtitle=%r derived=%r", bdmv["name"], title,
+        bdmv["video"].get(title_id, []), bdmv["audio"].get(title_id, []), bdmv["subtitle"].get(title_id, []), bdmv["derived"].get(title_id, []))
+    info = json.loads(exec([*mkvmerge, "-J", title_file]))
+    track_mapping = {}
+    for track in info["tracks"]:
+        track_mapping[track["properties"]["number"] - 1] = track["id"]
+    logging.debug("Extracted track mapping: %r", track_mapping)
+    normalize_bdmv_title_streams("video", config.setdefault("video", [{ "track": 0 }]), bdmv["video"].get(title_id, []), bdmv["derived"].get(title_id, []), track_mapping)
+    normalize_bdmv_title_streams("audio", config.setdefault("audio", [{ "track": 0 }]), bdmv["audio"].get(title_id, []), bdmv["derived"].get(title_id, []), track_mapping)
+    normalize_bdmv_title_streams("subtitle", config.setdefault("subtitle", []), bdmv["audio"].get(title_id, []), bdmv["derived"].get(title_id, []), track_mapping)
+
+def extract_bdmv_title(bdmv, title, output_directory):
+    title_id = bdmv["titles"][title]
+    if not title_id:
+        logging.critical("Did not find title %s in %s", title, bdmv["name"])
+        exit(1)
+    title_output = bdmv["output"][title_id]
+    if not title_output:
+        logging.critical("Did not get an output file for %s %s", bdmv["name"], title)
+        exit(1)
+    logging.info("Extracting %s %s", bdmv["name"], title)
+    exec([*makemkvcon, *MAKEMKV_STANDARD_ARGS, "mkv", "file:" + bdmv["path"], title_id, output_directory], parse_makemkv_progress)
+    output_file = os.path.join(output_directory, title_output)
+    if not os.path.isfile(output_file):
+        logging.critical("Expected file %s to have been created", output_file)
+        exit(1)
+    return output_file
 
 def scan_bdmv(name, path):
     logging.info("Scanning %s", path if verbose else name)
@@ -254,7 +230,7 @@ def scan_bdmv(name, path):
                     stream_derived.setdefault(title, []).append(int(stream))
     source_title = {}
     for title in title_file:
-        if not title in title_angle: source_title[title_file[title]] = title
+        if title not in title_angle: source_title[title_file[title]] = title
         else: source_title[title_file[title] + ":" + title_angle[title]] = title
     for title in title_originalid:
         source_title[title_originalid[title]] = title
@@ -270,26 +246,42 @@ def scan_bdmv(name, path):
         "video": stream_video,
         "audio": stream_audio,
         "subtitle": stream_subtitle,
-        "derived": stream_derived
+        "derived": stream_derived,
     }
 
-def extract_title(config, images):
-    bdmv = images[config["_source_image"][-1]]
-    if not bdmv:
-        logging.critical("Expected to have found %s", config["_source_image"][0])
-        exit(1)
-    title = bdmv["titles"][config["_source_title"]]
-    if not title:
-        logging.critical("Did not get a title for %s %s", bdmv["name"], config["_source_title"])
-        exit(1)
-    output = bdmv["output"][title]
-    if not output:
-        logging.critical("Did not get an output file for %s %s", bdmv["name"], config["_source_title"])
-        exit(1)
-    logging.debug("Streams for %s: video=%r audio=%r subtitle=%r derived=%r", bdmv["name"],
-        bdmv["video"].get(title, []), bdmv["audio"].get(title, []), bdmv["subtitle"].get(title, []), bdmv["derived"].get(title, []))
-    normalize_config_source(config, bdmv["video"].get(title, []), bdmv["audio"].get(title, []), bdmv["subtitle"].get(title, []), bdmv["derived"].get(title, []))
-    extract_bdmv_title(bdmv["name"], config, bdmv["path"], title, output)
+def process_config(config, images):
+    display_name = get_title_display_name(config)
+    logging.info("Processing %s", display_name)
+    with tempfile.TemporaryDirectory(prefix="ExtractMKV", suffix=sanitize(display_name), dir=temp_directory) as working_directory:
+        bdmv = images[config["_source_image"][-1]]
+        if not bdmv:
+            logging.critical("Expected to have found %s", config["_source_image"][0])
+            exit(1)
+        title_file = extract_bdmv_title(bdmv, config["_source_title"], working_directory)
+        normalize_bdmv_title(config, bdmv, config["_source_title"], title_file)
+        output_file = get_title_output_path(config)
+        logging.info("Remuxing to %s", output_file)
+        args = ["--title", display_name]
+        if config["video"]: args += ["--video-tracks", ",".join([str(track["_track"]) for track in config["video"]])]
+        if config["audio"]: args += ["--audio-tracks", ",".join([str(track["_track"]) for track in config["audio"]])]
+        if config["subtitle"]: args += ["--subtitle-tracks", ",".join([str(track["_track"]) for track in config["subtitle"]])]
+        all_tracks = [*config["video"], *config["audio"], *config["subtitle"]]
+        if all_tracks: args += ["--track-order", ",".join(["0:" + str(track["_track"]) for track in all_tracks])]
+        for track in all_tracks:
+            if "name" in track: args += ["--track-name", str(track["_track"]) + ":" + track["name"]]
+            if "language" in track: args += ["--language", str(track["_track"]) + ":" + track["language"]]
+            if "default" in track: args += ["--default-track-flag", str(track["_track"]) + ":" + ("1" if track["default"] else "0")]
+            if "forced" in track: args += ["--forced-display-flag", str(track["_track"]) + ":" + ("1" if track["forced"] else "0")]
+            if "commentary" in track: args += ["--commentary-flag", str(track["_track"]) + ":" + ("1" if track["commentary"] else "0")]
+            if "cropping" in track:
+                left = str(track["cropping"].get("left", 0))
+                top = str(track["cropping"].get("top", 0))
+                right = str(track["cropping"].get("right", 0))
+                bottom = str(track["cropping"].get("bottom", 0))
+                args += ["--cropping", str(track["_track"]) + ":" + left + "," + top + "," + right + "," + bottom]
+        logging.debug("Remux args: %s", " ".join(args))
+        exec([*mkvmerge, "-o", output_file, *args, title_file], parse_mkvmerge_progress)
+        logging.info("Completed %s", display_name)
 
 titles = []
 for config_path in config_paths:
@@ -339,8 +331,8 @@ while path_queue:
                 if unit_key_hash: found_images[unit_key_hash] = bdmv
                 found_images[entry.name] = bdmv
                 for title in titles[:]:
-                    if not title["_source_image"][-1] in found_images: continue
-                    extract_title(title, found_images)
+                    if title["_source_image"][-1] not in found_images: continue
+                    process_config(title, found_images)
                     titles.remove(title)
             elif entry.is_dir() and not os.path.exists(os.path.join(entry.path, "BDMV")):
                 path_queue.append(entry.path)
