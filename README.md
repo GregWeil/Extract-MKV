@@ -81,7 +81,12 @@ The `media.json` file stores definitions for how to handle each movie
 - **type**: The extras folder name to use (only used if `extra` is set) (defaults to `extras`)
 - **path**: Where to put the movie relative to `env.json:destination`
 - Track options (track order is determined by definition order)
-  - **track**: The index of the track in the MakeMKV interface (second audio track is 1)
+  - **track**: Track identification (a number is equivalent to only specifying `index`)
+    - **source**: Specify a DISCID to pull this track from a different source
+    - **title**: Specify a TITLEID to pull this track from (required if `source` is specified)
+    - **index**: The index of the track in the MakeMKV interface (second audio track is 1) (core/forced tracks are not counted)
+    - **core**: Select an audio track's core
+    - **forced**: Select the forced subtitles track
   - **name**: The display name of the track
   - **language**: The language code for the track
   - **default**: Set true if the track should have the default flag
@@ -104,10 +109,6 @@ The `media.json` file stores definitions for how to handle each movie
 - Values in `DISCID=""` act as defaults for all titles in the file, handy to avoid repeatedly specifying the path or series name
 - Values in `TITLEID=""` act as defaults for all titles in the disc, handy to avoid repeatedly specifying the movie name and year
 - Some movies have several titles with the same source file, differentiated using an angle number `TITLEID="00245.mpls:1"`
-- Track indices are zero indexed and follow MakeMKV UI ordering
-  - Core audio and forced subtitle tracks are not counted for track numbering
-  - To reference the first audio track's core set `track: { index: 0, core: true }`
-  - To reference forced subtitles for a track set `track: { index: 0, forced: true }`
 - If video tracks are not specified, the first video track is used with all default values
 - If audio tracks are not specified, the first audio track is used with all default values
 - If subtitle tracks are not specified, the output will not have any subtitles included
@@ -116,5 +117,4 @@ The `media.json` file stores definitions for how to handle each movie
 
 ## TODO
 
-- Reference tracks from other titles/BDMVs (ex pull commentary/audio from an older release)
-- Improve logging (final summary, warn if an exported track contains forced subtitles, etc)
+- Reference tracks from other mkvmerge compatible files, such as .mkv or .srt
