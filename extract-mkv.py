@@ -269,11 +269,11 @@ def process_config(config, images):
             title_file = extract_bdmv_title(bdmv, source_title[1], working_directory)
             normalize_bdmv_title(config, source_title, bdmv, title_file)
             title_video = [track for track in config["video"] if source_key(track) == source_title]
-            if title_video: args += ["--video-tracks", ",".join([str(track["_track"]) for track in title_video])]
+            args += ["--video-tracks", ",".join([str(track["_track"]) for track in title_video])] if title_video else ["--no-video"]
             title_audio = [track for track in config["audio"] if source_key(track) == source_title]
-            if title_audio: args += ["--audio-tracks", ",".join([str(track["_track"]) for track in title_audio])]
+            args += ["--audio-tracks", ",".join([str(track["_track"]) for track in title_audio])] if title_audio else ["--no-audio"]
             title_subtitle = [track for track in config["subtitle"] if source_key(track) == source_title]
-            if title_subtitle: args += ["--subtitle-tracks", ",".join([str(track["_track"]) for track in title_subtitle])]
+            args += ["--subtitle-tracks", ",".join([str(track["_track"]) for track in title_subtitle])] if title_subtitle else ["--no-subtitles"]
             for track in all_tracks:
                 if source_key(track) != source_title: continue
                 if "name" in track: args += ["--track-name", str(track["_track"]) + ":" + track["name"]]
