@@ -95,7 +95,7 @@ def parse_mkvmerge_progress(line):
     return int(line[10:-2]) / 100
 
 def sanitize(value):
-    value = re.sub(r'(^|[\s\.\\/])"([^\s"](?:[^"]*[^\s"])?)"([\s\.\\/]|$)', r'\1“\2”\3', value).replace('"','＂')
+    value = re.sub(r'(^|[\s\.\\/])"([^\s"](?:[^"]*[^\s"])?)"([\s\.\\/\:]|$)', r'\1“\2”\3', value).replace('"','＂')
     value = value.replace('?', '？').replace(':', '꞉').replace('*', '✳').replace('|', '⏐')
     return value.replace('<', '＜').replace('>', '＞').replace('/','⧸').replace('\\', '⧹')
 
