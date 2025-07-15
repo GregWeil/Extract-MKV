@@ -102,29 +102,36 @@ def sanitize(value):
 def get_title_display_name(config):
     name = config["name"]
     if "year" in config:
-        name = "%s (%i)" % (config["name"], config["year"])
+        name = "%s (%i)" % (name, config["year"])
     if "season" in config:
         name = "%s S%02i" % (name, config["season"])
         if "episode" in config:
             name = "%sE%02i" % (name, config["episode"])
-    if "version" in config:
-        name = "%s - %s" % (name, config["version"])
+    if "title" in config:
+        name = "%s %s" % (name, config["title"])
     if "extra" in config:
         name = "%s - %s" % (name, config["extra"])
+    if "version" in config:
+        name = "%s - %s" % (name, config["version"])
     return name
 
 def get_title_output_path(config):
     path = os.path.join(*config["path"]) if isinstance(config.get("path"), list) else config.get("path", "")
-    name = sanitize("%s (%i)" % (config["name"], config["year"]) if "year" in config else config["name"])
     subpath = ""
-    filename = "%s - %s" % (name, config["version"]) if "version" in config else name
+    name = sanitize("%s (%i)" % (config["name"], config["year"]) if "year" in config else config["name"])
+    filename = name
     if "season" in config:
         subpath = os.path.join(subpath, "Season %02i" % config["season"])
+        filename = "%s S%02i" % (config["name"], config["season"])
         if "episode" in config:
-            filename = "%s S%02iE%02i" % (config["name"], config["season"], config["episode"])
+            filename = "%sE%02i" % (filename, config["episode"])
+    if "title" in config:
+        filename = "%s %s" % (filename, config["title"])
     if "extra" in config:
         filename = config["extra"]
         subpath = os.path.join(subpath, config.get("type", "extras"))
+    if "version" in config:
+        filename = "%s - %s" % (filename, config["version"])
     return os.path.join(target_directory, path, name, subpath, sanitize(filename) + ".mkv")
 
 def source_key(track):

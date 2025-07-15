@@ -77,6 +77,7 @@ The `media.json` file stores definitions for how to handle each movie
 - **version**: The specific version of the movie
 - **season**: The season of the episode
 - **episode**: The episode number within the season
+- **title**: The title of the specific episode
 - **extra**: The name of the extra (setting this value marks this title as an extra)
 - **type**: The extras folder name to use (only used if `extra` is set) (defaults to `extras`)
 - **path**: Where to put the movie relative to `env.json:destination`
