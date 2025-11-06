@@ -184,11 +184,11 @@ def normalize_bdmv_title(config, source_title, bdmv, title_file):
     normalize_bdmv_title_streams("subtitle", config["subtitle"], source_title, bdmv, track_mapping)
 
 def extract_bdmv_title(bdmv, title, output_directory):
-    title_id = bdmv["titles"][title]
+    title_id = bdmv["titles"].get(title)
     if not title_id:
         logging.critical("Did not find title %s in %s", title, bdmv["name"])
         exit(1)
-    title_output = bdmv["output"][title_id]
+    title_output = bdmv["output"].get(title_id)
     if not title_output:
         logging.critical("Did not get an output file for %s %s", bdmv["name"], title)
         exit(1)
@@ -269,7 +269,7 @@ def process_config(config, images):
         source_titles = list(dict.fromkeys([source_key(track) for track in all_tracks]))
         args = ["--title", display_name]
         for source_title in source_titles:
-            bdmv = images[source_title[0][-1]]
+            bdmv = images.get(source_title[0][-1])
             if not bdmv:
                 logging.critical("Expected to have found %s", source_title[0][0])
                 exit(1)
