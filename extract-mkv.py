@@ -24,6 +24,8 @@ MAKEMKV_TYPE_SUBTITLE = 6203
 MAKEMKV_STREAMFLAGS = 22
 MAKEMKV_STREAMFLAGS_DERIVED = 2048
 
+MAKEMKV_MSG_DUPLICATETITLE = 3309
+
 env_dir = os.path.dirname(os.path.abspath(__file__))
 env_path = os.path.join(env_dir, "env.json")
 with open(env_path) as env_json:
@@ -213,6 +215,7 @@ def scan_bdmv(name, path):
     stream_audio = {}
     stream_subtitle = {}
     stream_derived = {}
+    duplicate_source = {}
     for line in result.splitlines():
         if line.startswith("TINFO:"):
             [title, field, code, value] = line[6:].split(",", 3)
@@ -240,6 +243,10 @@ def scan_bdmv(name, path):
             if int(field) == MAKEMKV_STREAMFLAGS:
                 if int(value.strip('"')) & MAKEMKV_STREAMFLAGS_DERIVED:
                     stream_derived.setdefault(title, []).append(int(stream))
+        if line.startswith("MSG:"):
+            [code, flags, count, text, text_format, *values] = line[4:].split(",")
+            if int(code) == MAKEMKV_MSG_DUPLICATETITLE:
+                duplicate_source[values[0].strip('"')] = values[1].strip('"')
     source_title = {}
     for title in title_file:
         if title not in title_angle: source_title[title_file[title]] = title
@@ -249,9 +256,11 @@ def scan_bdmv(name, path):
     for title in title_comment:
         source_title[title_comment[title]] = title
     logging.debug("Identified titles: %s", json.dumps(source_title))
+    if duplicate_source: logging.debug("Identified duplicate titles: %s", json.dumps(duplicate_source))
     return {
         "name": name,
         "path": path,
+        "duplicate": duplicate_source,
         "titles": source_title,
         "output": title_output,
         "bytes": title_bytes,
@@ -264,15 +273,26 @@ def scan_bdmv(name, path):
 def process_config(config, images):
     display_name = get_title_display_name(config)
     logging.info("Processing %s", display_name)
-    with tempfile.TemporaryDirectory(prefix="ExtractMKV", suffix=sanitize(display_name), dir=temp_directory) as working_directory:
-        all_tracks = [*config["video"], *config["audio"], *config["subtitle"]]
-        source_titles = list(dict.fromkeys([source_key(track) for track in all_tracks]))
-        args = ["--title", display_name]
-        for source_title in source_titles:
-            bdmv = images.get(source_title[0][-1])
-            if not bdmv:
-                logging.critical("Expected to have found %s", source_title[0][0])
+    args = ["--title", display_name]
+    all_tracks = [*config["video"], *config["audio"], *config["subtitle"]]
+    for track in all_tracks:
+        bdmv = images.get(track["_source"][-1])
+        if not bdmv:
+            logging.critical("Expected to have found %s", track["_source"][0])
+            exit(1)
+        if track["_title"] not in bdmv["titles"]:
+            title = track["_title"].split(":", 1)
+            if title[0] not in bdmv["duplicate"]:
+                logging.critical("Expected %s to have title %s", track["_source"][0], track["_title"])
                 exit(1)
+            track["_title"] = ":".join([bdmv["duplicate"][title[0]], *title[1:]])
+            if track["_title"] not in bdmv["titles"]:
+                logging.critical("Expected %s to have title %s (duplicate of %s)", track["_source"][0], track["_title"], ":".join(title))
+                exit(1)
+    with tempfile.TemporaryDirectory(prefix="ExtractMKV", suffix=sanitize(display_name), dir=temp_directory) as working_directory:
+        source_titles = list(dict.fromkeys([source_key(track) for track in all_tracks]))
+        for source_title in source_titles:
+            bdmv = images[source_title[0][-1]]
             title_file = extract_bdmv_title(bdmv, source_title[1], working_directory)
             normalize_bdmv_title(config, source_title, bdmv, title_file)
             title_video = [track for track in config["video"] if source_key(track) == source_title]
@@ -300,7 +320,7 @@ def process_config(config, images):
         logging.info("Remuxing to %s", output_file)
         logging.debug("Remux args: %s", " ".join(args))
         exec([*mkvmerge, "-o", output_file, *args], parse_mkvmerge_progress)
-        logging.info("Completed %s", display_name)
+    logging.info("Completed %s", display_name)
 
 titles = []
 for config_path in config_paths:
