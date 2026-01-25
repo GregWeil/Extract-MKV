@@ -1,3 +1,4 @@
+from collections.abc import Mapping
 import os
 import re
 import copy
@@ -8,7 +9,7 @@ import tempfile
 import subprocess
 import hashlib
 
-from src.environment import get_environment_config
+from src import environment
 
 MAKEMKV_ANGLEINFO = 15
 MAKEMKV_SOURCEFILENAME = 16
@@ -28,7 +29,7 @@ MAKEMKV_STREAMFLAGS_DERIVED = 2048
 MAKEMKV_MSG_DUPLICATETITLE = 3309
 
 env_dir = os.path.dirname(os.path.abspath(__file__))
-env = get_environment_config(env_dir)
+env = environment.get_environment_config(env_dir)
 
 argparser = argparse.ArgumentParser(description="MKV Extractor")
 argparser.add_argument("selection", help="Comma separated configuration keys, or ALL to export everything")

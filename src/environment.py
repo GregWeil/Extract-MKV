@@ -1,8 +1,9 @@
-from dataclasses import dataclass
 from collections.abc import Iterable
+from dataclasses import dataclass
+import logging
 import os.path
-import json
 import glob
+import json
 
 @dataclass(kw_only=True)
 class EnvironmentConfig:
@@ -13,7 +14,7 @@ class EnvironmentConfig:
     target_directory: str
     temp_directory: str | None
 
-def get_environment_config(env_dir: str):
+def get_environment_config(env_dir: str) -> EnvironmentConfig:
     env_path = os.path.join(env_dir, "env.json")
     with open(env_path) as env_json:
         env = json.load(env_json)
