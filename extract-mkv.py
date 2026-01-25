@@ -6,27 +6,9 @@ import json
 import logging
 import argparse
 import tempfile
-import subprocess
 import hashlib
 
-from src import environment, bdmvinfo
-
-MAKEMKV_ANGLEINFO = 15
-MAKEMKV_SOURCEFILENAME = 16
-MAKEMKV_ORIGINALTITLEID = 24
-MAKEMKV_OUTPUTFILENAME = 27
-MAKEMKV_OUTPUTSIZEBYTES = 11
-MAKEMKV_COMMENT = 49
-
-MAKEMKV_TYPE = 1
-MAKEMKV_TYPE_VIDEO = 6201
-MAKEMKV_TYPE_AUDIO = 6202
-MAKEMKV_TYPE_SUBTITLE = 6203
-
-MAKEMKV_STREAMFLAGS = 22
-MAKEMKV_STREAMFLAGS_DERIVED = 2048
-
-MAKEMKV_MSG_DUPLICATETITLE = 3309
+from src import environment, bdmvinfo, command
 
 env_dir = os.path.dirname(os.path.abspath(__file__))
 env = environment.get_environment_config(env_dir)
@@ -40,41 +22,6 @@ selection = arguments.selection.split(",")
 force = arguments.force
 verbose = arguments.verbose
 logging.basicConfig(level=(logging.DEBUG if verbose else logging.INFO), format="%(asctime)s %(levelname)s %(message)s")
-
-MAKEMKV_STANDARD_ARGS = ["--robot", "--noscan", "--minlength=0", "--messages=-stdout", "--debug=-null", "--progress=-null" if verbose else "--progress=-stdout"]
-
-def exec(args, parse_progress=None):
-    logging.debug(' '.join(args))
-    progress_total = 40
-    progress_segments = -1
-    output = ""
-    with subprocess.Popen(args, stdout=subprocess.PIPE, text=True, universal_newlines=True, encoding="UTF-8") as process:
-        for line in process.stdout:
-            if verbose: print(line, end="")
-            elif parse_progress:
-                progress = parse_progress(line)
-                if progress != None:
-                    segments = int(progress * progress_total)
-                    if segments != progress_segments:
-                        print("\r[" + ("#" * segments) + ("-" * (progress_total - segments)) + "]", end="")
-                    progress_segments = segments
-            output += line
-    if process.returncode != 0:
-        if not verbose:
-            if parse_progress: print("")
-            print(output, end="")
-        raise subprocess.CalledProcessError(process.returncode, process.args)
-    elif parse_progress and not verbose: print("\r  " + (" " * progress_total), end="\r")
-    return output
-
-def parse_makemkv_progress(line):
-    if not line.startswith("PRGV:"): return None
-    [current, total, max] = line[5:].split(",")
-    return int(current) / int(max)
-
-def parse_mkvmerge_progress(line):
-    if not line.startswith("Progress:"): return None
-    return int(line[10:-2]) / 100
 
 def sanitize(value):
     value = re.sub(r'(^|[\s\.\\/])"([^\s"](?:[^"]*[^\s"])?)"([\s\.\\/\:]|$)', r'\1“\2”\3', value).replace('"','＂')
@@ -155,7 +102,7 @@ def normalize_bdmv_title(config, source_title, bdmv: bdmvinfo.BdmvInfo, title_fi
     bdmv_title = bdmv.titles[source_title[1]]
     logging.debug("Streams for %s %s: video=%r audio=%r subtitle=%r derived=%r", bdmv.name, source_title[1],
         bdmv_title.video_streams, bdmv_title.audio_streams, bdmv_title.subtitle_streams, bdmv_title.derived_streams)
-    info = json.loads(exec([*env.mkvmerge, "-J", title_file]))
+    info = json.loads(command.exec_mkvmerge(["-J", title_file], env, verbose))
     track_mapping: Mapping[int, int] = {}
     for track in info["tracks"]:
         track_mapping[track["properties"]["number"] - 1] = track["id"]
@@ -170,7 +117,7 @@ def extract_bdmv_title(bdmv: bdmvinfo.BdmvInfo, title, output_directory: str):
         logging.critical("Did not find title %s in %s", title, bdmv.name)
         exit(1)
     logging.info("Extracting %s %s", bdmv.name, title)
-    exec([*env.makemkvcon, *MAKEMKV_STANDARD_ARGS, "mkv", "file:" + bdmv.path, bdmv_title.title_id, output_directory], parse_makemkv_progress)
+    command.exec_makemkv(["mkv", "file:" + bdmv.path, bdmv_title.title_id, output_directory], env, verbose)
     output_file = os.path.join(output_directory, bdmv_title.output_file)
     if not os.path.isfile(output_file):
         logging.critical("Expected file %s to have been created", output_file)
@@ -179,7 +126,7 @@ def extract_bdmv_title(bdmv: bdmvinfo.BdmvInfo, title, output_directory: str):
 
 def scan_bdmv(name, path):
     logging.info("Scanning %s", path if verbose else name)
-    makemkv_info = exec([*env.makemkvcon, *MAKEMKV_STANDARD_ARGS, "info", "file:" + path], parse_makemkv_progress)
+    makemkv_info = command.exec_makemkv(["info", "file:" + path], env, verbose)
     return bdmvinfo.parse_bdmv_info(name, path, makemkv_info)
 
 def process_config(config, images: Mapping[str, bdmvinfo.BdmvInfo]):
@@ -225,7 +172,7 @@ def process_config(config, images: Mapping[str, bdmvinfo.BdmvInfo]):
         output_file = get_title_output_path(config)
         logging.info("Remuxing to %s", output_file)
         logging.debug("Remux args: %s", " ".join(args))
-        exec([*env.mkvmerge, "-o", output_file, *args], parse_mkvmerge_progress)
+        command.exec_mkvmerge(["-o", output_file, *args], env, verbose)
     logging.info("Completed %s", display_name)
 
 titles = []
