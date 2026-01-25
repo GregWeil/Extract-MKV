@@ -1,4 +1,4 @@
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 import os
 import re
 import copy
@@ -9,7 +9,7 @@ import tempfile
 import subprocess
 import hashlib
 
-from src import environment
+from src import environment, bdmvinfo
 
 MAKEMKV_ANGLEINFO = 15
 MAKEMKV_SOURCEFILENAME = 16
@@ -119,10 +119,9 @@ def get_title_output_path(config):
 def source_key(track):
     return (tuple(track["_source"]), track["_title"])
 
-def normalize_bdmv_title_streams(stream_type, config_streams, source_title, bdmv, track_mapping):
-    title_id = bdmv["titles"][source_title[1]]
-    bdmv_streams = bdmv[stream_type].get(title_id, [])
-    bdmv_derived = [i for i in bdmv["derived"].get(title_id, []) if i in bdmv_streams]
+def normalize_bdmv_title_streams(stream_type: str, config_streams, source_title,
+                                 bdmv_streams: Iterable[int], bdmv_all_derived: Iterable[int], track_mapping: Mapping[int, int]):
+    bdmv_derived = [i for i in bdmv_all_derived if i in bdmv_streams]
     actual_bdmv_streams = sorted(i for i in bdmv_streams if i not in bdmv_derived)
     default_specified = any(config.get("default", False) for config in config_streams)
     used_bdmv_streams = []
@@ -139,7 +138,7 @@ def normalize_bdmv_title_streams(stream_type, config_streams, source_title, bdmv
                 logging.critical("Failed to normalize %r: Expected stream %i to be derived for %s track %i", config, actual_index, stream_type, track_index)
                 exit(1)
         if actual_index not in track_mapping:
-            logging.critical("%s track %r not not found in the extracted mkv", stream_type.title(), config_track)
+            logging.critical("%s track %r not not found in the extracted mkv", stream_type.title(), config["track"]["index"])
             exit(1)
         if default_specified: config.setdefault("default", False)
         config["_track"] = track_mapping[actual_index]
@@ -152,31 +151,27 @@ def normalize_bdmv_title_streams(stream_type, config_streams, source_title, bdmv
         if actual_i not in used_bdmv_streams: continue
         logging.warning("%s track %i has an unused derived track", stream_type.title(), actual_bdmv_streams.index(actual_i))
 
-def normalize_bdmv_title(config, source_title, bdmv, title_file):
-    title_id = bdmv["titles"][source_title[1]]
-    logging.debug("Streams for %s %s: video=%r audio=%r subtitle=%r derived=%r", bdmv["name"], source_title[1],
-        bdmv["video"].get(title_id, []), bdmv["audio"].get(title_id, []), bdmv["subtitle"].get(title_id, []), bdmv["derived"].get(title_id, []))
+def normalize_bdmv_title(config, source_title, bdmv: bdmvinfo.BdmvInfo, title_file: str):
+    bdmv_title = bdmv.titles[source_title[1]]
+    logging.debug("Streams for %s %s: video=%r audio=%r subtitle=%r derived=%r", bdmv.name, source_title[1],
+        bdmv_title.video_streams, bdmv_title.audio_streams, bdmv_title.subtitle_streams, bdmv_title.derived_streams)
     info = json.loads(exec([*env.mkvmerge, "-J", title_file]))
-    track_mapping = {}
+    track_mapping: Mapping[int, int] = {}
     for track in info["tracks"]:
         track_mapping[track["properties"]["number"] - 1] = track["id"]
     logging.debug("Extracted track mapping: %r", track_mapping)
-    normalize_bdmv_title_streams("video", config["video"], source_title, bdmv, track_mapping)
-    normalize_bdmv_title_streams("audio", config["audio"], source_title, bdmv, track_mapping)
-    normalize_bdmv_title_streams("subtitle", config["subtitle"], source_title, bdmv, track_mapping)
+    normalize_bdmv_title_streams("video", config["video"], source_title, bdmv_title.video_streams, bdmv_title.derived_streams, track_mapping)
+    normalize_bdmv_title_streams("audio", config["audio"], source_title, bdmv_title.audio_streams, bdmv_title.derived_streams, track_mapping)
+    normalize_bdmv_title_streams("subtitle", config["subtitle"], source_title, bdmv_title.subtitle_streams, bdmv_title.derived_streams, track_mapping)
 
-def extract_bdmv_title(bdmv, title, output_directory):
-    title_id = bdmv["titles"].get(title)
-    if not title_id:
-        logging.critical("Did not find title %s in %s", title, bdmv["name"])
+def extract_bdmv_title(bdmv: bdmvinfo.BdmvInfo, title, output_directory: str):
+    bdmv_title = bdmv.titles.get(title)
+    if not bdmv_title:
+        logging.critical("Did not find title %s in %s", title, bdmv.name)
         exit(1)
-    title_output = bdmv["output"].get(title_id)
-    if not title_output:
-        logging.critical("Did not get an output file for %s %s", bdmv["name"], title)
-        exit(1)
-    logging.info("Extracting %s %s", bdmv["name"], title)
-    exec([*env.makemkvcon, *MAKEMKV_STANDARD_ARGS, "mkv", "file:" + bdmv["path"], title_id, output_directory], parse_makemkv_progress)
-    output_file = os.path.join(output_directory, title_output)
+    logging.info("Extracting %s %s", bdmv.name, title)
+    exec([*env.makemkvcon, *MAKEMKV_STANDARD_ARGS, "mkv", "file:" + bdmv.path, bdmv_title.title_id, output_directory], parse_makemkv_progress)
+    output_file = os.path.join(output_directory, bdmv_title.output_file)
     if not os.path.isfile(output_file):
         logging.critical("Expected file %s to have been created", output_file)
         exit(1)
@@ -184,73 +179,10 @@ def extract_bdmv_title(bdmv, title, output_directory):
 
 def scan_bdmv(name, path):
     logging.info("Scanning %s", path if verbose else name)
-    result = exec([*env.makemkvcon, *MAKEMKV_STANDARD_ARGS, "info", "file:" + path], parse_makemkv_progress)
-    title_file = {}
-    title_angle = {}
-    title_originalid = {}
-    title_comment = {}
-    title_output = {}
-    title_bytes = {}
-    stream_video = {}
-    stream_audio = {}
-    stream_subtitle = {}
-    stream_derived = {}
-    duplicate_source = {}
-    for line in result.splitlines():
-        if line.startswith("TINFO:"):
-            [title, field, code, value] = line[6:].split(",", 3)
-            if int(field) == MAKEMKV_SOURCEFILENAME:
-                title_file[title] = value.strip('"')
-            if int(field) == MAKEMKV_ANGLEINFO:
-                title_angle[title] = value.strip('"')
-            if int(field) == MAKEMKV_ORIGINALTITLEID:
-                title_originalid[title] = value.strip('"')
-            if int(field) == MAKEMKV_COMMENT:
-                title_comment[title] = value.strip('"')
-            if int(field) == MAKEMKV_OUTPUTFILENAME:
-                title_output[title] = value.strip('"')
-            if int(field) == MAKEMKV_OUTPUTSIZEBYTES:
-                title_bytes[title] = int(value.strip('"'))
-        if line.startswith("SINFO:"):
-            [title, stream, field, code, value] = line[6:].split(",", 4)
-            if int(field) == MAKEMKV_TYPE:
-                if int(code) == MAKEMKV_TYPE_VIDEO:
-                    stream_video.setdefault(title, []).append(int(stream))
-                if int(code) == MAKEMKV_TYPE_AUDIO:
-                    stream_audio.setdefault(title, []).append(int(stream))
-                if int(code) == MAKEMKV_TYPE_SUBTITLE:
-                    stream_subtitle.setdefault(title, []).append(int(stream))
-            if int(field) == MAKEMKV_STREAMFLAGS:
-                if int(value.strip('"')) & MAKEMKV_STREAMFLAGS_DERIVED:
-                    stream_derived.setdefault(title, []).append(int(stream))
-        if line.startswith("MSG:"):
-            [code, flags, count, text, text_format, *values] = line[4:].split(",")
-            if int(code) == MAKEMKV_MSG_DUPLICATETITLE:
-                duplicate_source[values[0].strip('"')] = values[1].strip('"')
-    source_title = {}
-    for title in title_file:
-        if title not in title_angle: source_title[title_file[title]] = title
-        else: source_title[title_file[title] + ":" + title_angle[title]] = title
-    for title in title_originalid:
-        source_title[title_originalid[title]] = title
-    for title in title_comment:
-        source_title[title_comment[title]] = title
-    logging.debug("Identified titles: %s", json.dumps(source_title))
-    if duplicate_source: logging.debug("Identified duplicate titles: %s", json.dumps(duplicate_source))
-    return {
-        "name": name,
-        "path": path,
-        "duplicate": duplicate_source,
-        "titles": source_title,
-        "output": title_output,
-        "bytes": title_bytes,
-        "video": stream_video,
-        "audio": stream_audio,
-        "subtitle": stream_subtitle,
-        "derived": stream_derived,
-    }
+    makemkv_info = exec([*env.makemkvcon, *MAKEMKV_STANDARD_ARGS, "info", "file:" + path], parse_makemkv_progress)
+    return bdmvinfo.parse_bdmv_info(name, path, makemkv_info)
 
-def process_config(config, images):
+def process_config(config, images: Mapping[str, bdmvinfo.BdmvInfo]):
     display_name = get_title_display_name(config)
     logging.info("Processing %s", display_name)
     args = ["--title", display_name]
@@ -260,17 +192,11 @@ def process_config(config, images):
         if not bdmv:
             logging.critical("Expected to have found %s", track["_source"][0])
             exit(1)
-        if track["_title"] not in bdmv["titles"]:
-            title = track["_title"].split(":", 1)
-            if title[0] not in bdmv["duplicate"]:
-                logging.critical("Expected %s to have title %s", track["_source"][0], track["_title"])
-                exit(1)
-            track["_title"] = ":".join([bdmv["duplicate"][title[0]], *title[1:]])
-            if track["_title"] not in bdmv["titles"]:
-                logging.critical("Expected %s to have title %s (duplicate of %s)", track["_source"][0], track["_title"], ":".join(title))
-                exit(1)
+        if track["_title"] not in bdmv.titles:
+            logging.critical("Expected %s to have title %s", bdmv.name, track["_title"])
+            exit(1)
     with tempfile.TemporaryDirectory(prefix="ExtractMKV", suffix=sanitize(display_name), dir=env.temp_directory) as working_directory:
-        source_titles = list(dict.fromkeys([source_key(track) for track in all_tracks]))
+        source_titles = list(set([source_key(track) for track in all_tracks]))
         for source_title in source_titles:
             bdmv = images[source_title[0][-1]]
             title_file = extract_bdmv_title(bdmv, source_title[1], working_directory)
@@ -340,7 +266,7 @@ else:
     logging.info("Identified %i titles to export: %s", len(titles), ", ".join([get_title_display_name(title) for title in titles]))
 
 required_images = set().union(*[title["_sources"] for title in titles])
-found_images = {}
+found_images: Mapping[str, bdmvinfo.BdmvInfo] = {}
 
 path_queue = [env.source_directory]
 while path_queue:
@@ -360,7 +286,7 @@ while path_queue:
             if unit_key_hash in required_images or entry.name in required_images:
                 bdmv = scan_bdmv(entry.name, entry.path)
                 if unit_key_hash: found_images[unit_key_hash] = bdmv
-                found_images[entry.name] = bdmv
+                found_images[bdmv.name] = bdmv
                 for title in titles[:]:
                     if not title["_sources"] <= found_images.keys(): continue
                     process_config(title, found_images)
