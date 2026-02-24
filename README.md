@@ -49,20 +49,17 @@ The `media.json` file stores definitions for how to handle each movie
                 {
                     "track": 0,
                     "name": "5.1 DTS-HD Master Audio",
-                    "language": "eng",
                     "default": true
                 }
             ],
             "subtitle": [
                 {
                     "track": 0,
-                    "name": "English",
-                    "language": "eng"
+                    "name": "English"
                 },
                 {
                     "track": { "index": 0, "forced": true },
                     "name": "English (forced)",
-                    "language": "eng",
                     "forced": true
                 }
             ]
@@ -85,7 +82,7 @@ The `media.json` file stores definitions for how to handle each movie
   - **track**: Track identification (a number is equivalent to only specifying `index`)
     - **source**: Specify a DISCID to pull this track from a different source
     - **title**: Specify a TITLEID to pull this track from (required if `source` is specified)
-    - **index**: The index of the track in the MakeMKV interface (second audio track is 1) (core/forced tracks are not counted)
+    - **index**: The index of the track in the MakeMKV interface (first audio track is 0) (core/forced tracks are not counted)
     - **core**: Select an audio track's core
     - **forced**: Select the forced subtitles track
   - **name**: The display name of the track
@@ -105,11 +102,13 @@ The `media.json` file stores definitions for how to handle each movie
 - Set the env.json config property to an array to split definitions across multiple files
 - The env.json config property can use glob format instead of listing every file
 - Files are generated at `[destination]/[path]/[name] ([year])/[name] ([year]).mkv`
-  - If version is defined then `[destination]/[path]/[name] ([year])/[name] ([year]) - [version].mkv`
+  - If it is a movie extra then `[destination]/[path]/[name] ([year])/[type]/[extra].mkv`
   - If season and episode then `[destination]/[path]/[name] ([year])/Season [season]/[name] S[season]E[episode].mkv`
+  - If a season extra then `[destination]/[path]/[name] ([year])/Season [season]/[type]/[extra].mkv`
+  - If version is specified it is added at the end of the path with `[...] - [version].mkv`
 - Values in `DISCID=""` act as defaults for all titles in the file, handy to avoid repeatedly specifying the path or series name
 - Values in `TITLEID=""` act as defaults for all titles in the disc, handy to avoid repeatedly specifying the movie name and year
-- Some movies have several titles with the same source file, differentiated using an angle number `TITLEID="00245.mpls:1"`
+- Some movies have several titles with the same source file, differentiated using an angle number `TITLEID="00245.mpls(1)"`
 - If video tracks are not specified, the first video track is used with all default values
 - If audio tracks are not specified, the first audio track is used with all default values
 - If subtitle tracks are not specified, the output will not have any subtitles included
@@ -119,3 +118,5 @@ The `media.json` file stores definitions for how to handle each movie
 ## TODO
 
 - Reference tracks from other mkvmerge compatible files, such as .mkv or .srt
+- Concatenate multiple titles into a single file, to support two disc movies
+- Split titles on chapters or at specific times, to split episodes or remove credits

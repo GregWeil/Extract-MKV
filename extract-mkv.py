@@ -224,11 +224,12 @@ while path_queue:
     with path_iterator:
         for entry in path_iterator:
             bdmv_key = bdmvkey.identify_bdmv_path(entry.name, entry.path)
-            if bdmv_key.identifier() in required_images:
+            if bdmv_key.identifier() in required_images or bdmv_key.name in required_images:
                 logging.info("Scanning %s", entry.path if verbose else entry.name)
                 makemkv_info = command.exec_makemkv(["info", "file:" + entry.path], env, verbose)
                 bdmv = bdmvinfo.parse_bdmv_info(entry.name, entry.path, makemkv_info)
                 found_images[bdmv_key.identifier()] = bdmv
+                found_images[bdmv_key.name] = bdmv
                 for output_config in outputs[:]:
                     output_requirements = set([key.identifier() for key in get_all_config_source_bdmvs(output_config)])
                     if not output_requirements <= found_images.keys(): continue

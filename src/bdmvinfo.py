@@ -98,7 +98,7 @@ def parse_bdmv_info(name: str, path: str, makemkv_info: str) -> BdmvInfo:
     source_title: Mapping[str, BdmvTitleInfo] = {}
     for title in title_file:
         if title not in title_angle: source_title[title_file[title]] = titles[title]
-        else: source_title[title_file[title] + ":" + title_angle[title]] = titles[title]
+        else: source_title[f"{title_file[title]}({title_angle[title]})"] = titles[title]
     for title in title_originalid:
         source_title[title_originalid[title]] = titles[title]
     for title in title_comment:
@@ -107,8 +107,15 @@ def parse_bdmv_info(name: str, path: str, makemkv_info: str) -> BdmvInfo:
         if source in source_title:
             logging.critical("Title %s in %s was listed as a duplicate but has data", source, name)
             exit(1)
+        for _ in range(0, len(duplicate_source) + 1):
+            if target not in duplicate_source: break
+            target = duplicate_source[target]
+        else:
+            logging.critical("Title %s in %s is a duplicate of itself", source, name)
+            exit(1)
         if target not in source_title:
             logging.critical("Title %s in %s is a duplicate of nonexistant title %s", source, name, target)
+            exit(1)
         source_title[source] = source_title[target]
 
     logging.debug("Identified titles: %s", source_title.keys())
